@@ -14,7 +14,7 @@ import type {
 
 const OTP_EXPIRES_MINUTES = Number(process.env.OTP_EXPIRES_MINUTES) || 5;
 
-const createAndSendOtp = async (email: string, purpose: OtpPurpose): Promise<void> => {
+const createAndSendOtp = async (email: string, purpose: OtpPurpose): Promise<any> => {
     // remove any previous unused OTPs for this email/purpose
     await Otp.deleteMany({ email, purpose });
 
@@ -22,7 +22,8 @@ const createAndSendOtp = async (email: string, purpose: OtpPurpose): Promise<voi
     const expiresAt = new Date(Date.now() + OTP_EXPIRES_MINUTES * 60 * 1000);
 
     await Otp.create({ email, code, purpose, expiresAt });
-    await sendOtp(email, code);
+    const smtpResponse = await sendOtp(email, code);
+    return smtpResponse;
 };
 
 // @route  POST /api/auth/register
@@ -43,15 +44,32 @@ export const register = async (
         }
 
         const user = await User.create({ fullName, email, password, companyName });
-        await createAndSendOtp(user.email, 'registration');
+        const smtpResponse = await createAndSendOtp(user.email, 'registration');
 
         return res.status(201).json({
             message: 'Account created. Please verify the OTP sent to your email.',
             email: user.email,
+            smtpResponse,
         });
     } catch (err) {
+        console.error("=== REGISTER ERROR LOGS ===");
+        console.error(err);
+        if (err instanceof Error) {
+            console.error("Stack trace:\n", err.stack);
+        }
+        console.error("============================");
+
         const message = err instanceof Error ? err.message : 'Unknown error';
-        return res.status(500).json({ message: 'Registration failed.', error: message });
+        return res.status(500).json({
+            message: 'Registration failed.',
+            error: message,
+            details: err instanceof Error ? {
+                stack: err.stack,
+                message: err.message,
+                name: err.name,
+                ...(err as any)
+            } : err
+        });
     }
 };
 
@@ -78,24 +96,42 @@ export const login = async (
         }
 
         if (!user.isVerified) {
-            await createAndSendOtp(user.email, 'registration');
+            const smtpResponse = await createAndSendOtp(user.email, 'registration');
             return res.status(403).json({
                 message: 'Account not verified. A new OTP has been sent.',
                 requiresVerification: true,
                 email: user.email,
+                smtpResponse,
             });
         }
 
-        await createAndSendOtp(user.email, 'login');
+        const smtpResponse = await createAndSendOtp(user.email, 'login');
 
         return res.status(200).json({
             message: 'OTP sent for verification.',
             requiresOtp: true,
             email: user.email,
+            smtpResponse,
         });
     } catch (err) {
+        console.error("=== LOGIN ERROR LOGS ===");
+        console.error(err);
+        if (err instanceof Error) {
+            console.error("Stack trace:\n", err.stack);
+        }
+        console.error("=========================");
+
         const message = err instanceof Error ? err.message : 'Unknown error';
-        return res.status(500).json({ message: 'Login failed.', error: message });
+        return res.status(500).json({
+            message: 'Login failed.',
+            error: message,
+            details: err instanceof Error ? {
+                stack: err.stack,
+                message: err.message,
+                name: err.name,
+                ...(err as any)
+            } : err
+        });
     }
 };
 
@@ -163,11 +199,30 @@ export const resendOtp = async (
             return res.status(404).json({ message: 'User not found.' });
         }
 
-        await createAndSendOtp(user.email, purpose);
+        const smtpResponse = await createAndSendOtp(user.email, purpose);
 
-        return res.status(200).json({ message: 'A new OTP has been sent.' });
+        return res.status(200).json({
+            message: 'A new OTP has been sent.',
+            smtpResponse,
+        });
     } catch (err) {
+        console.error("=== RESEND OTP ERROR LOGS ===");
+        console.error(err);
+        if (err instanceof Error) {
+            console.error("Stack trace:\n", err.stack);
+        }
+        console.error("==============================");
+
         const message = err instanceof Error ? err.message : 'Unknown error';
-        return res.status(500).json({ message: 'Failed to resend OTP.', error: message });
+        return res.status(500).json({
+            message: 'Failed to resend OTP.',
+            error: message,
+            details: err instanceof Error ? {
+                stack: err.stack,
+                message: err.message,
+                name: err.name,
+                ...(err as any)
+            } : err
+        });
     }
 };
