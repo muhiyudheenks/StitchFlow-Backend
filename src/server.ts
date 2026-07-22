@@ -3,6 +3,7 @@ dotenv.config();
 
 import express, { Application } from 'express';
 import cors from 'cors';
+import cookieParser from "cookie-parser"
 import connectDB from "./configure/db";
 import authRoutes from './routes/authRoute';
 import { notFound, errorHandler } from './Middlewares/errorHandler';
@@ -18,6 +19,7 @@ app.use(
     })
 );
 app.use(express.json());
+app.use(cookieParser())
 
 app.get('/api/health', (req, res) => {
     res.status(200).json({ status: 'ok', service: 'stitchflow-backend' });

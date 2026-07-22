@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import User from '../models/userModel';
 import Otp from '../models/otpModel';
 import generateOtp from '../utils/generateOtp';
@@ -11,11 +11,13 @@ import type {
     ResendOtpRequestBody,
     OtpPurpose,
 } from '../types/authTypes';
+import { loginValidator, registerValidator, resendOtpValidator, verifyOtpValidator } from '../validations/auth-validation';
+import z from 'zod';
 
 const OTP_EXPIRES_MINUTES = Number(process.env.OTP_EXPIRES_MINUTES) || 5;
 
 const createAndSendOtp = async (email: string, purpose: OtpPurpose): Promise<any> => {
-    // remove any previous unused OTPs for this email/purpose
+    // remove any previous unused OTPs 
     await Otp.deleteMany({ email, purpose });
 
     const code = generateOtp();
@@ -29,14 +31,17 @@ const createAndSendOtp = async (email: string, purpose: OtpPurpose): Promise<any
 // @route  POST /api/auth/register
 export const register = async (
     req: Request<unknown, unknown, RegisterRequestBody>,
-    res: Response
-): Promise<Response> => {
+    res: Response,
+    next: NextFunction
+): Promise<Response | void> => {
     try {
-        const { fullName, email, password, companyName } = req.body;
-
-        if (!fullName || !email || !password) {
-            return res.status(400).json({ message: 'Full name, email and password are required.' });
+        const result = registerValidator.safeParse(req.body);
+        if (!result.success) {
+            return res.status(400).json({
+                errors: z.flattenError(result.error).fieldErrors,
+            });
         }
+        const { fullName, email, password, companyName } = result.data;
 
         const existingUser = await User.findOne({ email: email.toLowerCase() });
         if (existingUser) {
@@ -52,38 +57,25 @@ export const register = async (
             smtpResponse,
         });
     } catch (err) {
-        console.error("=== REGISTER ERROR LOGS ===");
-        console.error(err);
-        if (err instanceof Error) {
-            console.error("Stack trace:\n", err.stack);
-        }
-        console.error("============================");
-
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        return res.status(500).json({
-            message: 'Registration failed.',
-            error: message,
-            details: err instanceof Error ? {
-                stack: err.stack,
-                message: err.message,
-                name: err.name,
-                ...(err as any)
-            } : err
-        });
+        next(err)
     }
 };
 
-// @route  POST /api/auth/login
+// /auth/login
 export const login = async (
     req: Request<unknown, unknown, LoginRequestBody>,
-    res: Response
-): Promise<Response> => {
+    res: Response,
+    next: NextFunction
+): Promise<Response | void> => {
     try {
-        const { email, password } = req.body;
-
-        if (!email || !password) {
-            return res.status(400).json({ message: 'Email and password are required.' });
+        const result = loginValidator.safeParse(req.body);
+        if (!result.success) {
+            return res.status(400).json({
+                errors: z.flattenError(result.error).fieldErrors,
+            });
         }
+
+        const { email, password } = result.data;
 
         const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
         if (!user) {
@@ -114,38 +106,24 @@ export const login = async (
             smtpResponse,
         });
     } catch (err) {
-        console.error("=== LOGIN ERROR LOGS ===");
-        console.error(err);
-        if (err instanceof Error) {
-            console.error("Stack trace:\n", err.stack);
-        }
-        console.error("=========================");
-
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        return res.status(500).json({
-            message: 'Login failed.',
-            error: message,
-            details: err instanceof Error ? {
-                stack: err.stack,
-                message: err.message,
-                name: err.name,
-                ...(err as any)
-            } : err
-        });
+        next(err)
     }
 };
 
-// @route  POST /api/auth/verify-otp
+// verify-otp
 export const verifyOtp = async (
     req: Request<unknown, unknown, VerifyOtpRequestBody>,
-    res: Response
-): Promise<Response> => {
+    res: Response,
+    next: NextFunction
+): Promise<Response | void> => {
     try {
-        const { email, code, purpose } = req.body;
-
-        if (!email || !code || !purpose) {
-            return res.status(400).json({ message: 'Email, code and purpose are required.' });
+        const result = verifyOtpValidator.safeParse(req.body);
+        if (!result.success) {
+            return res.status(400).json({
+                errors: z.flattenError(result.error).fieldErrors,
+            });
         }
+        const { email, code, purpose } = result.data;
 
         const otpRecord = await Otp.findOne({ email: email.toLowerCase(), purpose });
 
@@ -171,28 +149,35 @@ export const verifyOtp = async (
 
         const token = generateToken(user._id);
 
+        res.cookie("token", token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        });
+
         return res.status(200).json({
-            message: 'Verification successful.',
-            token,
+            message: "Verification successful.",
             user: user.toPublicJSON(),
         });
     } catch (err) {
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        return res.status(500).json({ message: 'OTP verification failed.', error: message });
+        next(err)
     }
 };
-
-// @route  POST /api/auth/resend-otp
+// Resend OTP
 export const resendOtp = async (
     req: Request<unknown, unknown, ResendOtpRequestBody>,
-    res: Response
-): Promise<Response> => {
+    res: Response,
+    next: NextFunction
+): Promise<Response | void> => {
     try {
-        const { email, purpose } = req.body;
-
-        if (!email || !purpose) {
-            return res.status(400).json({ message: 'Email and purpose are required.' });
+        const result = resendOtpValidator.safeParse(req.body);
+        if (!result.success) {
+            return res.status(400).json({
+                error: z.flattenError(result.error).fieldErrors
+            })
         }
+        const { email, purpose } = result.data;
 
         const user = await User.findOne({ email: email.toLowerCase() });
         if (!user) {
@@ -206,23 +191,59 @@ export const resendOtp = async (
             smtpResponse,
         });
     } catch (err) {
-        console.error("=== RESEND OTP ERROR LOGS ===");
-        console.error(err);
-        if (err instanceof Error) {
-            console.error("Stack trace:\n", err.stack);
-        }
-        console.error("==============================");
+        next(err)
+    }
+};
 
-        const message = err instanceof Error ? err.message : 'Unknown error';
-        return res.status(500).json({
-            message: 'Failed to resend OTP.',
-            error: message,
-            details: err instanceof Error ? {
-                stack: err.stack,
-                message: err.message,
-                name: err.name,
-                ...(err as any)
-            } : err
+export const resetPassword = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+) => {
+    try {
+        const { email, newpassword } = req.body;
+        const user = await User.findOne({ email }).select("+password");
+        if (!user) {
+            return res.status(404).json({
+                message: "Email not found"
+            });
+        }
+        console.log(req.body);
+        console.log(user.password);
+        user.password = newpassword;
+        await user.save();
+        console.log("Before save:", user.password);
+        return res.status(200).json({
+            message: "Password reset successfully"
         });
+    } catch (error) {
+        console.error(error);
+
+        next(error)
+
+    }
+};
+export const forgotPassword = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+) => {
+    try {
+        const { email } = req.body;
+
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            return res.status(404).json({
+                message: "Email not found"
+            });
+        }
+
+        return res.status(200).json({
+            message: "Email verified"
+        });
+
+    } catch (error) {
+        next(error);
     }
 };

@@ -1,10 +1,9 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import User, { IUser } from '../models/userModel';
+import { AuthRequest } from '../types/roleTypes';
+import User from '../models/userModel';
 
-export interface AuthRequest extends Request {
-    user?: IUser;
-}
+
 
 interface JwtPayload {
     id: string;
@@ -26,7 +25,11 @@ const protect = async (req: AuthRequest, res: Response, next: NextFunction): Pro
             return res.status(401).json({ message: 'Not authorized. User no longer exists.' });
         }
 
-        req.user = user;
+        req.user = req.user = {
+            id: user._id.toString(),
+            role: user.role as "employee" | "manager" | "admin",
+            email: user.email,
+        };
         next();
     } catch (err) {
         return res.status(401).json({ message: 'Not authorized. Invalid or expired token.' });

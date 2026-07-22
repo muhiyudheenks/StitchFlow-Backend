@@ -6,8 +6,10 @@ export interface IUser extends Document {
     fullName: string;
     email: string;
     password: string;
+    role: "employee" | "manager" | "admin";
     companyName?: string;
     isVerified: boolean;
+    isBlock: boolean,
     createdAt: Date;
     updatedAt: Date;
     comparePassword(candidatePassword: string): Promise<boolean>;
@@ -34,6 +36,11 @@ const userSchema = new Schema<IUser>(
             minlength: 6,
             select: false,
         },
+        role: {
+            type: String,
+            enum: ["employee", "admin", "manager"],
+            default: "employee",
+        },
         companyName: {
             type: String,
             trim: true,
@@ -42,6 +49,10 @@ const userSchema = new Schema<IUser>(
             type: Boolean,
             default: false,
         },
+        isBlock: {
+            type: Boolean,
+            default: false,
+        }
     },
     { timestamps: true }
 );
@@ -65,8 +76,10 @@ userSchema.methods.toPublicJSON = function (this: IUser): PublicUser {
         id: this._id.toString(),
         fullName: this.fullName,
         email: this.email,
+        role: this.role,
         companyName: this.companyName,
         isVerified: this.isVerified,
+        isBlock: this.isBlock,
     };
 };
 
