@@ -1,0 +1,2 @@
+// Manager feature module
+export {};

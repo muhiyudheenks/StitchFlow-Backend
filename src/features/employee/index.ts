@@ -1,0 +1,2 @@
+// Employee feature module
+export {};

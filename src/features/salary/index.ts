@@ -1,0 +1,2 @@
+// Salary feature module
+export {};
