@@ -123,22 +123,13 @@ export const login = async (
             return res.status(401).json({ message: 'Invalid email or password.' });
         }
 
-        if (!user.isVerified) {
-            const smtpResponse = await createAndSendOtp(user.email, 'login');
-            return res.status(200).json({
-                message: 'Account not verified. OTP sent to your email.',
-                requiresOtp: true,
-                email: user.email,
-                smtpResponse,
-            });
-        }
-
-        const token = generateToken(user._id.toString());
+        const smtpResponse = await createAndSendOtp(user.email, 'login');
 
         return res.status(200).json({
-            message: 'Login successful.',
-            token,
-            user: user.toPublicJSON(),
+            message: 'OTP sent to your email for login verification.',
+            requiresOtp: true,
+            email: user.email,
+            smtpResponse,
         });
     } catch (err) {
         next(err);
@@ -383,3 +374,30 @@ export const setupPassword = async (
         next(error);
     }
 };
+
+// @route POST /api/auth/logout
+export const logout = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+): Promise<Response | void> => {
+    try {
+        res.cookie('token', '', {
+            httpOnly: true,
+            expires: new Date(0),
+            sameSite: 'lax',
+        });
+        res.cookie('jwt', '', {
+            httpOnly: true,
+            expires: new Date(0),
+            sameSite: 'lax',
+        });
+        return res.status(200).json({
+            success: true,
+            message: 'Logged out successfully.',
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+
