@@ -17,16 +17,44 @@ import z from 'zod';
 
 const OTP_EXPIRES_MINUTES = Number(process.env.OTP_EXPIRES_MINUTES) || 5;
 
-const createAndSendOtp = async (email: string, purpose: OtpPurpose): Promise<any> => {
+// const createAndSendOtp = async (email: string, purpose: OtpPurpose): Promise<any> => {
+//     await Otp.deleteMany({ email, purpose });
+
+//     const code = generateOtp();
+//     const expiresAt = new Date(Date.now() + OTP_EXPIRES_MINUTES * 60 * 1000);
+
+//     await Otp.create({ email, code, purpose, expiresAt });
+//     const smtpResponse = await sendOtp(email, code);
+//     return smtpResponse;
+// };
+const createAndSendOtp = async (email: string, purpose: OtpPurpose) => {
+    console.log("1 delete");
+
     await Otp.deleteMany({ email, purpose });
 
-    const code = generateOtp();
-    const expiresAt = new Date(Date.now() + OTP_EXPIRES_MINUTES * 60 * 1000);
+    console.log("2 generate");
 
-    await Otp.create({ email, code, purpose, expiresAt });
+    const code = generateOtp();
+
+    console.log("3 create");
+
+    await Otp.create({
+        email,
+        code,
+        purpose,
+        expiresAt: new Date(Date.now() + OTP_EXPIRES_MINUTES * 60 * 1000),
+    });
+
+    console.log("4 before send");
+
     const smtpResponse = await sendOtp(email, code);
+
+    console.log("5 after send");
+
     return smtpResponse;
 };
+
+
 
 // @route  POST /api/auth/register
 export const register = async (
@@ -136,6 +164,7 @@ export const login = async (
         if (!isMatch) {
             return res.status(401).json({ message: 'Invalid email or password.' });
         }
+        console.log(email);
 
         const smtpResponse = await createAndSendOtp(user.email, 'login');
 
