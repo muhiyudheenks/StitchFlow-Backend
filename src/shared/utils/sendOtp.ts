@@ -4,7 +4,7 @@ const sendOtp = async (email: string, code: string): Promise<boolean> => {
     const resend = new Resend(process.env.RESEND_API_KEY);
 
     const { error } = await resend.emails.send({
-        from: process.env.EMAIL_FROM as string,
+        from: process.env.EMAIL_FROM || '"StitchFlow AI" <no-reply@stitchflow.ai>',
         to: email,
         subject: "Your StitchFlow OTP",
         html: `
@@ -16,7 +16,7 @@ const sendOtp = async (email: string, code: string): Promise<boolean> => {
     });
 
     if (error) {
-        console.error("Resend error:", error);
+        console.error("Resend error (OTP):", error);
         return false;
     }
 
