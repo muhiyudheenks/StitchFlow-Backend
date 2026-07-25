@@ -17,27 +17,9 @@ import z from 'zod';
 
 const OTP_EXPIRES_MINUTES = Number(process.env.OTP_EXPIRES_MINUTES) || 5;
 
-// const createAndSendOtp = async (email: string, purpose: OtpPurpose): Promise<any> => {
-//     await Otp.deleteMany({ email, purpose });
-
-//     const code = generateOtp();
-//     const expiresAt = new Date(Date.now() + OTP_EXPIRES_MINUTES * 60 * 1000);
-
-//     await Otp.create({ email, code, purpose, expiresAt });
-//     const smtpResponse = await sendOtp(email, code);
-//     return smtpResponse;
-// };
 const createAndSendOtp = async (email: string, purpose: OtpPurpose) => {
-    console.log("1 delete");
-
     await Otp.deleteMany({ email, purpose });
-
-    console.log("2 generate");
-
     const code = generateOtp();
-
-    console.log("3 create");
-
     await Otp.create({
         email,
         code,
@@ -45,13 +27,8 @@ const createAndSendOtp = async (email: string, purpose: OtpPurpose) => {
         expiresAt: new Date(Date.now() + OTP_EXPIRES_MINUTES * 60 * 1000),
     });
 
-    console.log("4 before send");
-
-    const smtpResponse = await sendOtp(email, code);
-
-    console.log("5 after send");
-
-    return smtpResponse;
+    const resendResponse = await sendOtp(email, code);
+    return resendResponse;
 };
 
 
@@ -124,12 +101,12 @@ export const register = async (
         }
 
         const user = await User.create({ fullName, email, password, role: role || 'employee', companyName });
-        const smtpResponse = await createAndSendOtp(user.email, 'registration');
+        const emailResponse = await createAndSendOtp(user.email, 'registration');
 
         return res.status(201).json({
             message: 'Account created. Please verify the OTP sent to your email.',
             email: user.email,
-            smtpResponse,
+            emailResponse,
         });
     } catch (err) {
         next(err);
@@ -164,15 +141,13 @@ export const login = async (
         if (!isMatch) {
             return res.status(401).json({ message: 'Invalid email or password.' });
         }
-        console.log(email);
-
-        const smtpResponse = await createAndSendOtp(user.email, 'login');
+        const emailResponse = await createAndSendOtp(user.email, 'login');
 
         return res.status(200).json({
             message: 'OTP sent to your email for login verification.',
             requiresOtp: true,
             email: user.email,
-            smtpResponse,
+            emailResponse,
         });
     } catch (err) {
         next(err);
@@ -281,12 +256,12 @@ export const resendOtp = async (
             return res.status(404).json({ message: 'User not found.' });
         }
 
-        const smtpResponse = await createAndSendOtp(user.email, purpose);
+        const emailResponse = await createAndSendOtp(user.email, purpose);
 
         return res.status(200).json({
             message: 'A new OTP has been sent to your email.',
             email: user.email,
-            smtpResponse,
+            emailResponse,
         });
     } catch (err) {
         next(err);
@@ -340,13 +315,13 @@ export const forgotPassword = async (
             });
         }
 
-        const smtpResponse = await createAndSendOtp(user.email, 'forgot-password');
+        const emailResponse = await createAndSendOtp(user.email, 'forgot-password');
 
         return res.status(200).json({
             message: "OTP sent to your email for password reset.",
             email: user.email,
             requiresOtp: true,
-            smtpResponse,
+            emailResponse,
         });
 
     } catch (error) {
