@@ -9,7 +9,6 @@ import { employeeRouter } from './features/employee';
 
 import { tasksRouter } from './features/tasks';
 import { productionRouter } from './features/production';
-import { productionLineRouter } from './features/productionLine';
 import { inventoryRouter } from './features/inventory';
 import { leaveRouter } from './features/leave';
 import { salaryRouter } from './features/salary';
@@ -23,19 +22,9 @@ import { notFound, errorHandler } from './shared/middleware/errorHandler';
 
 const app: Application = express();
 
-const allowedOrigins = process.env.CLIENT_URL
-    ? process.env.CLIENT_URL.split(',').map(url => url.trim())
-    : ['http://localhost:3000'];
-
 app.use(
     cors({
-        origin: (origin, callback) => {
-            if (!origin || allowedOrigins.includes(origin)) {
-                callback(null, true);
-            } else {
-                callback(new Error('CORS Error: Not allowed by CORS'));
-            }
-        },
+        origin: process.env.CLIENT_URL || 'http://localhost:3000',
         credentials: true,
     })
 );
@@ -55,7 +44,6 @@ app.use('/api/employee', protect, authorize('employee', 'manager', 'admin'), emp
 // Centralized Domain Feature APIs
 app.use('/api/tasks', protect, tasksRouter);
 app.use('/api/production', protect, productionRouter);
-app.use('/api/production-lines', protect, productionLineRouter);
 app.use('/api/inventory', protect, inventoryRouter);
 app.use('/api/leave', protect, leaveRouter);
 app.use('/api/salary', protect, salaryRouter);
