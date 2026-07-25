@@ -1,14 +1,4 @@
-import nodemailer from "nodemailer";
-
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
-    secure: false,
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-    },
-});
+import { Resend } from "resend";
 
 export const sendInvitationEmail = async (
     email: string,
@@ -16,9 +6,11 @@ export const sendInvitationEmail = async (
     role: string,
     setupUrl: string
 ): Promise<boolean> => {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+
     const roleCapitalized = role.charAt(0).toUpperCase() + role.slice(1);
 
-    await transporter.sendMail({
+    const { error } = await resend.emails.send({
         from: process.env.EMAIL_FROM || '"StitchFlow AI" <no-reply@stitchflow.ai>',
         to: email,
         subject: `You've been invited to StitchFlow AI as a ${roleCapitalized}`,
@@ -52,6 +44,11 @@ export const sendInvitationEmail = async (
             </div>
         `,
     });
+
+    if (error) {
+        console.error("Resend error (invitation):", error);
+        return false;
+    }
 
     return true;
 };

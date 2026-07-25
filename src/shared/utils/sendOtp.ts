@@ -1,18 +1,10 @@
-import nodemailer from "nodemailer";
-
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
-    secure: false, // Port 587
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-    },
-});
+import { Resend } from "resend";
 
 const sendOtp = async (email: string, code: string): Promise<boolean> => {
-    await transporter.sendMail({
-        from: process.env.EMAIL_FROM,
+    const resend = new Resend(process.env.RESEND_API_KEY);
+
+    const { error } = await resend.emails.send({
+        from: process.env.EMAIL_FROM as string,
         to: email,
         subject: "Your StitchFlow OTP",
         html: `
@@ -22,6 +14,11 @@ const sendOtp = async (email: string, code: string): Promise<boolean> => {
             <p>This OTP is valid for 3 minutes.</p>
         `,
     });
+
+    if (error) {
+        console.error("Resend error:", error);
+        return false;
+    }
 
     return true;
 };
