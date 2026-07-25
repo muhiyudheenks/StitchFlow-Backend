@@ -6,13 +6,12 @@ import generateOtp from '../../../shared/utils/generateOtp';
 import sendOtp from '../../../shared/utils/sendOtp';
 import generateToken from '../../../shared/utils/generateToken';
 import type {
-    RegisterRequestBody,
     LoginRequestBody,
     VerifyOtpRequestBody,
     ResendOtpRequestBody,
     OtpPurpose,
 } from '../types/authTypes';
-import { loginValidator, registerValidator, resendOtpValidator, verifyOtpValidator } from '../validators/auth-validation';
+import { loginValidator, resendOtpValidator, verifyOtpValidator } from '../validators/auth-validation';
 import z from 'zod';
 
 const OTP_EXPIRES_MINUTES = Number(process.env.OTP_EXPIRES_MINUTES) || 5;
@@ -29,88 +28,6 @@ const createAndSendOtp = async (email: string, purpose: OtpPurpose) => {
 
     const resendResponse = await sendOtp(email, code);
     return resendResponse;
-};
-
-
-
-// @route  POST /api/auth/register
-export const register = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-): Promise<Response | void> => {
-    try {
-        const result = registerValidator.safeParse(req.body);
-        if (!result.success) {
-            return res.status(400).json({
-                message: result.error.issues[0]?.message || 'Validation failed',
-                errors: z.flattenError(result.error).fieldErrors,
-            });
-        }
-        const { fullName, email, password, role, companyName } = result.data;
-
-        const existingUser = await User.findOne({ email: email.toLowerCase() });
-        if (existingUser) {
-            if (!existingUser.isVerified || existingUser.setupPasswordToken) {
-                if (fullName) existingUser.fullName = fullName;
-                if (role) existingUser.role = role;
-                if (companyName) existingUser.companyName = companyName;
-
-                const { resendSetupPasswordToken } = await import('../../../shared/services/invitationService');
-                await resendSetupPasswordToken(existingUser);
-
-                return res.status(200).json({
-                    message: 'New setup password link sent to unverified user.',
-                    user: existingUser.toPublicJSON(),
-                });
-            }
-
-            return res.status(409).json({ message: 'An account with this email already exists.' });
-        }
-
-        // If no password is provided, this is an Admin user creation flow
-        if (!password) {
-            const rawToken = crypto.randomBytes(32).toString('hex');
-            const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
-            const setupPasswordExpire = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-
-            const user = await User.create({
-                fullName,
-                email: email.toLowerCase(),
-                role: role || 'employee',
-                companyName,
-                isVerified: false,
-                setupPasswordToken: hashedToken,
-                setupPasswordExpire,
-            });
-
-            const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-            const setupUrl = `${clientUrl}/set-password/${rawToken}`;
-
-            try {
-                const { sendInvitationEmail } = await import('../../../shared/services/emailService');
-                await sendInvitationEmail(user.email, user.fullName, user.role, setupUrl);
-            } catch (emailErr) {
-                console.error('Failed to send invitation email:', emailErr);
-            }
-
-            return res.status(201).json({
-                message: 'User created successfully. Invitation email sent.',
-                user: user.toPublicJSON(),
-            });
-        }
-
-        const user = await User.create({ fullName, email, password, role: role || 'employee', companyName });
-        const emailResponse = await createAndSendOtp(user.email, 'registration');
-
-        return res.status(201).json({
-            message: 'Account created. Please verify the OTP sent to your email.',
-            email: user.email,
-            emailResponse,
-        });
-    } catch (err) {
-        next(err);
-    }
 };
 
 // @route POST /api/auth/login

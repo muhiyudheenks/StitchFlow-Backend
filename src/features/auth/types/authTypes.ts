@@ -1,12 +1,4 @@
-export type OtpPurpose = 'registration' | 'login' | 'forgot-password';
-
-export interface RegisterRequestBody {
-    fullName: string;
-    email: string;
-    password?: string;
-    role?: "employee" | "admin" | "manager";
-    companyName?: string;
-}
+export type OtpPurpose = 'login' | 'forgot-password';
 
 export interface LoginRequestBody {
     email: string;

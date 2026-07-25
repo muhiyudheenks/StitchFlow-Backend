@@ -22,21 +22,29 @@ import { notFound, errorHandler } from './shared/middleware/errorHandler';
 
 const app: Application = express();
 
-const allowedOrigins = [
+const defaultOrigins = [
+    'http://localhost:3000',
     'https://stitchflow.space',
-    'https://www.stitchflow.space'
+    'https://www.stitchflow.space',
 ];
 
-app.use(cors({
-    origin: function (origin, callback) {
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    credentials: true
-}));
+const envFrontendUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL;
+const allowedOrigins = envFrontendUrl
+    ? Array.from(new Set([...defaultOrigins, envFrontendUrl]))
+    : defaultOrigins;
+
+app.use(
+    cors({
+        origin: function (origin, callback) {
+            if (!origin || allowedOrigins.includes(origin)) {
+                callback(null, true);
+            } else {
+                callback(new Error('Not allowed by CORS'));
+            }
+        },
+        credentials: true,
+    })
+);
 app.use(express.json());
 app.use(cookieParser());
 

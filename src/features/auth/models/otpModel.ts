@@ -23,8 +23,8 @@ const otpSchema = new Schema<IOtp>(
         },
         purpose: {
             type: String,
-            enum: ['registration', 'login', 'forgot-password'],
-            default: 'registration',
+            enum: ['login', 'forgot-password'],
+            default: 'login',
         },
         expiresAt: {
             type: Date,

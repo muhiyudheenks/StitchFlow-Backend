@@ -43,7 +43,7 @@ export class UserManagementService {
         });
 
         // 4. Dispatch invitation email
-        const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+        const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:3000';
         const setupUrl = `${clientUrl}/set-password/${rawToken}`;
 
         try {

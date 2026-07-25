@@ -11,7 +11,7 @@ export const resendSetupPasswordToken = async (user: IUser): Promise<{ user: IUs
     user.setupPasswordExpire = setupPasswordExpire;
     await user.save();
 
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+    const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:3000';
     const setupUrl = `${clientUrl}/set-password/${rawToken}`;
 
     try {
