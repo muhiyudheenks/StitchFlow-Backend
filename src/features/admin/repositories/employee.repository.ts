@@ -22,7 +22,9 @@ export class EmployeeRepository {
     }
 
     async findById(id: string): Promise<IUser | null> {
-        return await User.findOne({ _id: id, role: 'employee' }).populate('managerId', 'fullName email department');
+        return await User.findOne({ _id: id, role: 'employee' })
+            .populate('managerId', 'fullName email department')
+            .populate('assignedLine', 'name code targetPerDay status');
     }
 
     async findByEmail(email: string): Promise<IUser | null> {
@@ -30,10 +32,11 @@ export class EmployeeRepository {
     }
 
     async findAll(filter: any, skip: number, limit: number): Promise<{ employees: IUser[]; total: number }> {
-        const query = { role: 'employee', ...filter };
+        const query = { role: { $nin: ['admin', 'manager'] }, ...filter };
         const [employees, total] = await Promise.all([
             User.find(query)
                 .populate('managerId', 'fullName email department')
+                .populate('assignedLine', 'name code targetPerDay status')
                 .sort({ createdAt: -1 })
                 .skip(skip)
                 .limit(limit),
@@ -47,7 +50,9 @@ export class EmployeeRepository {
             { _id: id, role: 'employee' },
             { $set: dto },
             { new: true, runValidators: true }
-        ).populate('managerId', 'fullName email department');
+        )
+            .populate('managerId', 'fullName email department')
+            .populate('assignedLine', 'name code targetPerDay status');
     }
 
     async delete(id: string): Promise<IUser | null> {

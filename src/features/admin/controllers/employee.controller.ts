@@ -31,14 +31,13 @@ export class EmployeeController {
     getEmployees = async (req: AuthRequest, res: Response): Promise<Response> => {
         try {
             const result = await this.service.getEmployees(req.query);
-            return sendResponse(
-                res,
-                HTTP_STATUS.OK,
-                true,
-                'Employees retrieved successfully',
-                result.employees,
-                result.pagination
-            );
+            return res.status(200).json({
+                success: true,
+                message: 'Employees retrieved successfully.',
+                employees: result.employees,
+                data: result.employees,
+                pagination: result.pagination,
+            });
         } catch (error: any) {
             return sendResponse(
                 res,
@@ -133,6 +132,24 @@ export class EmployeeController {
                 false,
                 error.message || 'Failed to update status'
             );
+        }
+    };
+
+    resendSetupLink = async (req: AuthRequest, res: Response): Promise<Response> => {
+        try {
+            const { id } = req.params;
+            const adminEmail = req.user?.email || 'Admin';
+            const result = await this.service.resendSetupLink(id, adminEmail);
+            return res.status(200).json({
+                success: true,
+                message: 'New setup password link generated and sent successfully.',
+                data: result,
+            });
+        } catch (error: any) {
+            return res.status(400).json({
+                success: false,
+                message: error.message || 'Failed to resend setup password link',
+            });
         }
     };
 }

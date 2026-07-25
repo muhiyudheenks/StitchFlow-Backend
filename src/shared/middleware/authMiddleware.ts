@@ -9,14 +9,23 @@ interface JwtPayload {
 
 const protect = async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response | void> => {
     try {
-        const authHeader = req.headers.authorization;
+        let token: string | undefined;
 
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            token = authHeader.split(' ')[1];
+        } else if (req.cookies?.token) {
+            token = req.cookies.token;
+        } else if (req.cookies?.jwt) {
+            token = req.cookies.jwt;
+        }
+
+        if (!token) {
             return res.status(401).json({ message: 'Not authorized. No token provided.' });
         }
 
-        const token = authHeader.split(' ')[1];
-        const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as JwtPayload;
+        const secret = process.env.JWT_SECRET || 'your-secret-key';
+        const decoded = jwt.verify(token, secret) as JwtPayload;
 
         const user = await User.findById(decoded.id);
         if (!user) {

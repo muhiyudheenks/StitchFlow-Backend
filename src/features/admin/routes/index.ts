@@ -6,12 +6,14 @@ import inventoryRoutes from './inventory.routes';
 import attendanceRoutes from './attendance.routes';
 import dashboardRoutes from './dashboard.routes';
 import userManagementRoutes from './userManagement.routes';
+import productionLineRoutes from '../../productionLine/routes';
 
 const router = Router();
 
 router.use('/employees', employeeRoutes);
 router.use('/managers', managerRoutes);
 router.use('/production', productionRoutes);
+router.use('/production-lines', productionLineRoutes);
 router.use('/inventory', inventoryRoutes);
 router.use('/attendance', attendanceRoutes);
 router.use('/dashboard', dashboardRoutes);

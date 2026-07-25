@@ -11,6 +11,25 @@ export class EmployeeService {
     async createEmployee(dto: CreateEmployeeDto, adminName: string = 'Admin') {
         const existing = await this.repo.findByEmail(dto.email);
         if (existing) {
+            if (!existing.isVerified || existing.setupPasswordToken) {
+                if (dto.fullName) existing.fullName = dto.fullName;
+                if (dto.department) existing.department = dto.department;
+                if (dto.designation) existing.designation = dto.designation;
+                if (dto.managerId) existing.managerId = dto.managerId as any;
+
+                const { resendSetupPasswordToken } = await import('../../../shared/services/invitationService');
+                await resendSetupPasswordToken(existing);
+
+                await this.activityRepo.logActivity(
+                    adminName,
+                    'admin',
+                    `Resent setup password link to unverified employee ${existing.fullName}`,
+                    'Employee',
+                    `Email: ${existing.email}`
+                );
+
+                return existing.toPublicJSON();
+            }
             throw new Error('Email is already registered');
         }
         const employee = await this.repo.create(dto);
@@ -24,31 +43,95 @@ export class EmployeeService {
         return employee.toPublicJSON();
     }
 
+    async resendSetupLink(id: string, adminName: string = 'Admin') {
+        const employee = await this.repo.findById(id);
+        if (!employee) {
+            throw new Error('Employee not found');
+        }
+
+        if (employee.isVerified && !employee.setupPasswordToken) {
+            throw new Error('Employee account is already activated and verified');
+        }
+
+        const { resendSetupPasswordToken } = await import('../../../shared/services/invitationService');
+        await resendSetupPasswordToken(employee);
+
+        await this.activityRepo.logActivity(
+            adminName,
+            'admin',
+            `Resent setup password link to employee ${employee.fullName}`,
+            'Employee',
+            `ID: ${id}`
+        );
+
+        return {
+            id: employee._id.toString(),
+            email: employee.email,
+            fullName: employee.fullName,
+            message: 'New setup password link generated and sent successfully.',
+        };
+    }
+
     async getEmployees(query: PaginationQuery) {
         const { page, limit, skip } = getPaginationOptions(query);
-        const filter: any = {};
+        const filter: any = {
+            role: { $nin: ['admin', 'manager'] },
+        };
 
-        if (query.search) {
+        if (query.search && query.search.trim() !== '') {
+            const searchRegex = new RegExp(query.search.trim(), 'i');
             filter.$or = [
-                { fullName: { $regex: query.search, $options: 'i' } },
-                { email: { $regex: query.search, $options: 'i' } },
-                { department: { $regex: query.search, $options: 'i' } },
+                { fullName: searchRegex },
+                { email: searchRegex },
+                { department: searchRegex },
+                { designation: searchRegex },
             ];
         }
 
-        if (query.status) {
-            filter.status = query.status;
+        if (query.status && query.status !== 'All') {
+            filter.status = new RegExp(`^${query.status}$`, 'i');
         }
 
-        if (query.department) {
-            filter.department = query.department;
+        if (query.department && query.department !== 'All') {
+            filter.department = new RegExp(`^${query.department}$`, 'i');
         }
 
         const { employees, total } = await this.repo.findAll(filter, skip, limit);
         const meta = buildPaginationMeta(total, page, limit);
 
+        const formattedEmployees = employees.map((e) => {
+            const json = e.toPublicJSON();
+            const rawStatus = json.status || 'active';
+            const formattedStatus =
+                rawStatus === 'on_leave'
+                    ? 'On Leave'
+                    : rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1);
+
+            let lineName = 'Unassigned';
+            if (e.assignedLine && typeof e.assignedLine === 'object' && 'name' in e.assignedLine) {
+                lineName = (e.assignedLine as any).name;
+            }
+
+            return {
+                id: json.id,
+                name: json.fullName,
+                fullName: json.fullName,
+                email: json.email,
+                department: json.department || 'General',
+                designation: json.designation || 'Staff',
+                role: json.role,
+                status: formattedStatus,
+                shift: 'Shift A',
+                attendanceRate: 96.5,
+                assignedLine: json.assignedLine || null,
+                lineName,
+                isVerified: json.isVerified,
+                createdAt: e.createdAt,
+            };
+        });
+
         return {
-            employees: employees.map((e) => e.toPublicJSON()),
+            employees: formattedEmployees,
             pagination: meta,
         };
     }

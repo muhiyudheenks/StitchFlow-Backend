@@ -12,6 +12,7 @@ router.get('/search', controller.getEmployees);
 router.get('/:id', controller.getEmployeeById);
 router.put('/:id', validateRequest(updateEmployeeSchema), controller.updateEmployee);
 router.patch('/:id/status', controller.updateStatus);
+router.post('/:id/resend-setup-link', controller.resendSetupLink);
 router.delete('/:id', controller.deleteEmployee);
 
 export default router;

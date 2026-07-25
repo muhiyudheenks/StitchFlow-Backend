@@ -46,6 +46,20 @@ export const register = async (
 
         const existingUser = await User.findOne({ email: email.toLowerCase() });
         if (existingUser) {
+            if (!existingUser.isVerified || existingUser.setupPasswordToken) {
+                if (fullName) existingUser.fullName = fullName;
+                if (role) existingUser.role = role;
+                if (companyName) existingUser.companyName = companyName;
+
+                const { resendSetupPasswordToken } = await import('../../../shared/services/invitationService');
+                await resendSetupPasswordToken(existingUser);
+
+                return res.status(200).json({
+                    message: 'New setup password link sent to unverified user.',
+                    user: existingUser.toPublicJSON(),
+                });
+            }
+
             return res.status(409).json({ message: 'An account with this email already exists.' });
         }
 
@@ -190,6 +204,20 @@ export const verifyOtp = async (
         }
 
         const token = generateToken(user._id.toString());
+
+        res.cookie('token', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+        });
+
+        res.cookie('jwt', token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+        });
 
         return res.status(200).json({
             message: 'OTP verified successfully.',

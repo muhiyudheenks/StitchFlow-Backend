@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import User from '../../auth/models/userModel';
 import { sendInvitationEmail } from '../../../shared/services/emailService';
+import { resendSetupPasswordToken } from '../../../shared/services/invitationService';
 import { CreateUserDTO } from '../validators/userManagement.validators';
 
 export class UserManagementService {
@@ -10,6 +11,16 @@ export class UserManagementService {
         // 1. Check for duplicate email
         const existingUser = await User.findOne({ email: emailNormalized });
         if (existingUser) {
+            if (!existingUser.isVerified || existingUser.setupPasswordToken) {
+                if (data.fullName) existingUser.fullName = data.fullName;
+                if (data.role) existingUser.role = data.role;
+                if (data.department) existingUser.department = data.department;
+                if (data.designation) existingUser.designation = data.designation;
+                if (data.phone) existingUser.phone = data.phone;
+
+                await resendSetupPasswordToken(existingUser);
+                return existingUser.toPublicJSON();
+            }
             throw new Error('DUPLICATE_EMAIL');
         }
 

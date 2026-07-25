@@ -9,6 +9,7 @@ import { employeeRouter } from './features/employee';
 
 import { tasksRouter } from './features/tasks';
 import { productionRouter } from './features/production';
+import { productionLineRouter } from './features/productionLine';
 import { inventoryRouter } from './features/inventory';
 import { leaveRouter } from './features/leave';
 import { salaryRouter } from './features/salary';
@@ -44,6 +45,7 @@ app.use('/api/employee', protect, authorize('employee', 'manager', 'admin'), emp
 // Centralized Domain Feature APIs
 app.use('/api/tasks', protect, tasksRouter);
 app.use('/api/production', protect, productionRouter);
+app.use('/api/production-lines', protect, productionLineRouter);
 app.use('/api/inventory', protect, inventoryRouter);
 app.use('/api/leave', protect, leaveRouter);
 app.use('/api/salary', protect, salaryRouter);
