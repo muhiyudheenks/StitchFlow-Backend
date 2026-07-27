@@ -1,14 +1,13 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface IProductionBatch extends Document {
-    batchNumber: string;
-    productName: string;
-    targetQuantity: number;
-    completedQuantity: number;
-    line: string;
-    startDate?: Date;
-    dueDate?: Date;
-    status: 'planned' | 'in_production' | 'quality_check' | 'completed';
+    batchName: string;
+    manager: mongoose.Types.ObjectId | string;
+    members: (mongoose.Types.ObjectId | string)[];
+    stitchingWorkers?: (mongoose.Types.ObjectId | string)[];
+    finishingWorkers?: (mongoose.Types.ObjectId | string)[];
+    notes?: string;
+    status: 'UNASSIGNED' | 'PENDING_MANAGER' | 'ASSIGNED' | 'IN_PROGRESS' | 'Active' | 'In Progress' | 'Completed' | 'On Hold';
     createdBy?: mongoose.Types.ObjectId | string;
     createdAt: Date;
     updatedAt: Date;
@@ -16,19 +15,18 @@ export interface IProductionBatch extends Document {
 
 const productionBatchSchema = new Schema<IProductionBatch>(
     {
-        batchNumber: { type: String, required: true, unique: true, trim: true },
-        productName: { type: String, required: true, trim: true },
-        targetQuantity: { type: Number, required: true, min: 1 },
-        completedQuantity: { type: Number, default: 0 },
-        line: { type: String, default: 'Line A' },
-        startDate: { type: Date, default: Date.now },
-        dueDate: { type: Date },
+        batchName: { type: String, required: true, unique: true, trim: true },
+        manager: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        members: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+        stitchingWorkers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+        finishingWorkers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+        notes: { type: String, trim: true },
         status: {
             type: String,
-            enum: ['planned', 'in_production', 'quality_check', 'completed'],
-            default: 'planned',
+            enum: ['UNASSIGNED', 'PENDING_MANAGER', 'ASSIGNED', 'IN_PROGRESS', 'Active', 'In Progress', 'Completed', 'On Hold'],
+            default: 'PENDING_MANAGER',
         },
-        createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+        createdBy: { type: Schema.Types.Mixed, default: 'Admin' },
     },
     { timestamps: true }
 );

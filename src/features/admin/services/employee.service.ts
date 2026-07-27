@@ -107,11 +107,6 @@ export class EmployeeService {
                     ? 'On Leave'
                     : rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1);
 
-            let lineName = 'Unassigned';
-            if (e.assignedLine && typeof e.assignedLine === 'object' && 'name' in e.assignedLine) {
-                lineName = (e.assignedLine as any).name;
-            }
-
             return {
                 id: json.id,
                 name: json.fullName,
@@ -123,8 +118,6 @@ export class EmployeeService {
                 status: formattedStatus,
                 shift: 'Shift A',
                 attendanceRate: 96.5,
-                assignedLine: json.assignedLine || null,
-                lineName,
                 isVerified: json.isVerified,
                 createdAt: e.createdAt,
             };

@@ -1,36 +1,48 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface ITask extends Document {
-    title: string;
+    batchId: mongoose.Types.ObjectId | string;
+    assignedEmployee: mongoose.Types.ObjectId | string;
+    taskName: string;
+    operationType?: string;
+    priority: 'Low' | 'Medium' | 'High' | 'Urgent';
+    targetQuantity: number;
+    completedQuantity: number;
+    status: 'Pending' | 'In Progress' | 'Under Review' | 'Completed' | 'Rejected';
     description?: string;
-    assignedTo?: mongoose.Types.ObjectId | string;
-    createdBy: mongoose.Types.ObjectId | string;
-    priority: 'low' | 'medium' | 'high' | 'urgent';
-    status: 'pending' | 'in_progress' | 'completed';
-    deadline?: Date;
-    department?: string;
+    dueDate?: Date;
+    startedAt?: Date;
+    completedAt?: Date;
+    verifiedByManager?: mongoose.Types.ObjectId | string;
+    createdBy?: mongoose.Types.ObjectId | string;
     createdAt: Date;
     updatedAt: Date;
 }
 
 const taskSchema = new Schema<ITask>(
     {
-        title: { type: String, required: true, trim: true },
-        description: { type: String, trim: true },
-        assignedTo: { type: Schema.Types.ObjectId, ref: 'User' },
-        createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        batchId: { type: Schema.Types.ObjectId, ref: 'ProductionBatch', required: true },
+        assignedEmployee: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        taskName: { type: String, required: true, trim: true },
+        operationType: { type: String, default: 'Stitching' },
         priority: {
             type: String,
-            enum: ['low', 'medium', 'high', 'urgent'],
-            default: 'medium',
+            enum: ['Low', 'Medium', 'High', 'Urgent'],
+            default: 'Medium',
         },
+        targetQuantity: { type: Number, required: true, min: 1 },
+        completedQuantity: { type: Number, default: 0 },
         status: {
             type: String,
-            enum: ['pending', 'in_progress', 'completed'],
-            default: 'pending',
+            enum: ['Pending', 'In Progress', 'Under Review', 'Completed', 'Rejected'],
+            default: 'Pending',
         },
-        deadline: { type: Date },
-        department: { type: String, default: 'Production' },
+        description: { type: String, trim: true },
+        dueDate: { type: Date },
+        startedAt: { type: Date },
+        completedAt: { type: Date },
+        verifiedByManager: { type: Schema.Types.ObjectId, ref: 'User' },
+        createdBy: { type: Schema.Types.Mixed, default: 'Manager' },
     },
     { timestamps: true }
 );

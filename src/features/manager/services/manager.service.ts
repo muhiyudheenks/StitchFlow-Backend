@@ -1,6 +1,6 @@
 import User from '../../auth/models/userModel';
 import Task from '../models/taskModel';
-import ProductionBatch from '../models/productionBatchModel';
+import ProductionBatch from '../../production/models/productionBatchModel';
 import LeaveRequest from '../models/leaveRequestModel';
 import AttendanceRecord from '../models/attendanceModel';
 
@@ -23,41 +23,81 @@ export class ManagerService {
             activeEmployeesCount,
             totalEmployeesCount,
             batches,
+            tasks,
             pendingTasksCount,
             pendingLeavesCount,
+            inventoryAlertsCount,
         ] = await Promise.all([
             User.countDocuments({ role: 'employee', status: 'active' }),
             User.countDocuments({ role: 'employee' }),
             ProductionBatch.find().sort({ createdAt: -1 }),
-            Task.countDocuments({ status: 'pending' }),
+            Task.find().sort({ createdAt: -1 }),
+            Task.countDocuments({ status: 'Pending' }),
             LeaveRequest.countDocuments({ status: 'pending' }),
+            inventoryService.getInventoryItems().then((items) => items.filter((i: any) => i.quantity <= i.reorderLevel).length),
         ]);
 
-        const completedPcs = batches.reduce((sum, b) => sum + (b.completedQuantity || 0), 0);
-        const targetPcs = batches.reduce((sum, b) => sum + (b.targetQuantity || 0), 0) || 10000;
+        const completedTasksCount = tasks.filter((t) => (t.status || '').toLowerCase() === 'completed').length;
+        const totalTasksCount = tasks.length || 1;
+        const efficiencyRate = Math.min(100, Math.round((completedTasksCount / totalTasksCount) * 100)) || 85;
+
+        const completedPieces = tasks
+            .filter((t) => (t.status || '').toLowerCase() === 'completed')
+            .reduce((sum, t) => sum + ((t as any).completedQuantity || (t as any).quantity || 100), 0);
+        const targetPieces = tasks.reduce((sum, t) => sum + ((t as any).targetQuantity || (t as any).quantity || 100), 0) || 5000;
+
+        // Build dynamic production batch summaries
+        const productionBatches = batches.map((b) => {
+            const batchTasks = tasks.filter((t) => (t as any).batchId?.toString() === b._id.toString() || (t as any).batchName === b.batchName);
+            const doneTasks = batchTasks.filter((t) => (t.status || '').toLowerCase() === 'completed').length;
+            const totTasks = batchTasks.length || 1;
+            const eff = Math.min(100, Math.round((doneTasks / totTasks) * 100)) || 75;
+
+            return {
+                id: b._id.toString(),
+                name: b.batchName,
+                completedTasks: doneTasks,
+                totalTasks: batchTasks.length,
+                efficiency: eff,
+                status: b.status,
+            };
+        });
+
+        // Build dynamic recent activities
+        const recentActivity: any[] = [];
+        tasks.slice(0, 3).forEach((t) => {
+            const taskTitle = t.taskName || (t as any).title || (t as any).operationName || 'Production Task';
+            recentActivity.push({
+                id: `t_${t._id}`,
+                title: `Task: ${taskTitle}`,
+                description: `Assigned task status is "${t.status}". Priority: ${t.priority || 'Medium'}.`,
+                time: new Date((t as any).createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                type: 'task',
+            });
+        });
+
+        batches.slice(0, 2).forEach((b) => {
+            recentActivity.push({
+                id: `b_${b._id}`,
+                title: `Batch: ${b.batchName}`,
+                description: `Production batch status is "${b.status}".`,
+                time: new Date((b as any).createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                type: 'production',
+            });
+        });
 
         return {
             metrics: {
-                todayProduction: completedPcs || 3840,
-                targetProduction: targetPcs || 5000,
-                efficiencyRate: Math.round(((completedPcs || 3840) / (targetPcs || 5000)) * 100),
-                activeEmployees: activeEmployeesCount || 42,
-                totalEmployees: totalEmployeesCount || 48,
-                pendingApprovals: (pendingTasksCount || 0) + (pendingLeavesCount || 0) || 6,
-                inventoryAlerts: 3,
+                todayProduction: completedPieces,
+                targetProduction: targetPieces,
+                efficiencyRate,
+                activeEmployees: activeEmployeesCount,
+                totalEmployees: totalEmployeesCount,
+                pendingApprovals: pendingTasksCount + pendingLeavesCount,
+                inventoryAlerts: inventoryAlertsCount,
             },
-            productionLines: [
-                { id: '1', name: 'Assembly Line A', completedPcs: 1420, targetPcs: 1800, efficiency: 84, leader: 'David Miller' },
-                { id: '2', name: 'Cutting & Laying', completedPcs: 1200, targetPcs: 1400, efficiency: 91, leader: 'Sarah Jenkins' },
-                { id: '3', name: 'Denim Outerwear Line', completedPcs: 850, targetPcs: 1000, efficiency: 85, leader: 'Robert Vance' },
-                { id: '4', name: 'Quality Control Line', completedPcs: 370, targetPcs: 800, efficiency: 78, leader: 'Elena Rostova' },
-            ],
-            recentActivity: [
-                { id: '1', title: 'Batch #BT-9042 Completed', description: 'Assembly Line A finished 1,200 Denim Jacket units.', time: '20 mins ago', type: 'production' },
-                { id: '2', title: 'Leave Request Received', description: 'Michael Scott submitted a 2-day casual leave request.', time: '1 hour ago', type: 'leave' },
-                { id: '3', title: 'Low Stock Warning', description: 'Heavyweight Indigo Fabric stock dropped below reorder level (120 meters).', time: '3 hours ago', type: 'inventory' },
-                { id: '4', title: 'Task Completed', description: 'Quality inspection on Batch #BT-8891 completed by Elena Rostova.', time: '5 hours ago', type: 'task' },
-            ],
+            productionBatches,
+            recentActivity,
         };
     }
 
@@ -75,19 +115,24 @@ export class ManagerService {
         }
 
         const employees = await User.find(query).sort({ createdAt: -1 });
+        const allTasks = await Task.find({ status: { $ne: 'Completed' } });
 
-        return employees.map((u) => ({
-            id: u._id.toString(),
-            name: u.fullName,
-            email: u.email,
-            department: u.department || 'General',
-            designation: u.designation || 'Staff',
-            status: u.status || 'active',
-            phone: u.phone || 'N/A',
-            isVerified: u.isVerified,
-            attendanceRate: 95,
-            assignedTasks: 4,
-        }));
+        return employees.map((u) => {
+            const empTasks = allTasks.filter((t) => (t as any).assignedEmployee?.toString() === u._id.toString() || (t as any).assignedTo?.toString() === u._id.toString());
+
+            return {
+                id: u._id.toString(),
+                name: u.fullName,
+                email: u.email,
+                department: u.department || 'Production',
+                designation: u.designation || 'Operator',
+                status: u.status || 'active',
+                phone: u.phone || 'N/A',
+                isVerified: u.isVerified,
+                attendanceRate: 96,
+                assignedTasks: empTasks.length,
+            };
+        });
     }
 
     // 3. Delegation to Centralized Domain Feature Services
@@ -104,23 +149,19 @@ export class ManagerService {
     }
 
     async getAttendanceRecords() {
-        const records = await AttendanceRecord.find().populate('employeeId', 'fullName email department').sort({ createdAt: -1 });
-        if (records.length === 0) {
-            return [
-                { id: 'a1', employeeName: 'Alexander Wright', department: 'Cutting & Laying', date: '2026-07-23', checkIn: '08:45 AM', checkOut: '05:15 PM', status: 'present', isApproved: true },
-                { id: 'a2', employeeName: 'Elena Rostova', department: 'Quality Control', date: '2026-07-23', checkIn: '09:12 AM', checkOut: '05:00 PM', status: 'late', isApproved: false },
-                { id: 'a3', employeeName: 'Marcus Brody', department: 'Assembly Line A', date: '2026-07-23', checkIn: '—', checkOut: '—', status: 'absent', isApproved: false },
-            ];
-        }
-        return records.map((r) => ({
+        const records = await AttendanceRecord.find()
+            .populate('employeeId', 'fullName email department')
+            .sort({ date: -1, createdAt: -1 });
+
+        return records.map((r: any) => ({
             id: r._id.toString(),
-            employeeName: (r.employeeId as any)?.fullName || 'Staff Member',
+            employeeName: (r.employeeId as any)?.fullName || 'Employee',
             department: (r.employeeId as any)?.department || 'Production',
             date: r.date,
-            checkIn: r.checkIn || '09:00 AM',
-            checkOut: r.checkOut || '05:00 PM',
+            checkIn: r.checkIn || '—',
+            checkOut: r.checkOut || '—',
             status: r.status,
-            isApproved: r.isApproved,
+            isApproved: r.isApproved ?? true,
         }));
     }
 
@@ -146,7 +187,8 @@ export class ManagerService {
 
     async getInventoryOverview() {
         const items = await inventoryService.getInventoryItems();
-        return { items, alertsCount: 1 };
+        const alertsCount = items.filter((i: any) => i.quantity <= i.reorderLevel).length;
+        return { items, alertsCount };
     }
 
     async getReports(type: string = 'summary') {
