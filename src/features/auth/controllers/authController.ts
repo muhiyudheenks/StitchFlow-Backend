@@ -252,22 +252,27 @@ export const verifySetupToken = async (
     next: NextFunction
 ): Promise<Response | void> => {
     try {
-        const { token } = req.params;
-        if (!token) {
+        const tokenInput = req.params.token || (req.query.token as string);
+        if (!tokenInput) {
             return res.status(400).json({ message: 'Token is required.' });
         }
 
-        const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+        const rawToken = decodeURIComponent(tokenInput.toString().trim());
+        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
         const user = await User.findOne({
             setupPasswordToken: hashedToken,
             setupPasswordExpire: { $gt: new Date() },
-        });
+        }).select('+setupPasswordToken +setupPasswordExpire');
 
         if (!user) {
+            console.warn(`[VerifySetupToken] Invalid or expired token hash: ${hashedToken}`);
             return res.status(400).json({
                 message: 'Invalid or expired password setup link. Please contact your administrator.'
             });
         }
+
+        console.log(`[VerifySetupToken] Successfully verified token for: ${user.email}`);
 
         return res.status(200).json({
             valid: true,
@@ -286,8 +291,8 @@ export const setupPassword = async (
     next: NextFunction
 ): Promise<Response | void> => {
     try {
-        const { token, newPassword, confirmPassword } = req.body;
-        if (!token || !newPassword) {
+        const { token: tokenInput, newPassword, confirmPassword } = req.body;
+        if (!tokenInput || !newPassword) {
             return res.status(400).json({ message: 'Token and new password are required.' });
         }
         if (confirmPassword && newPassword !== confirmPassword) {
@@ -297,13 +302,16 @@ export const setupPassword = async (
             return res.status(400).json({ message: 'Password must be at least 6 characters.' });
         }
 
-        const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+        const rawToken = decodeURIComponent(tokenInput.toString().trim());
+        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
         const user = await User.findOne({
             setupPasswordToken: hashedToken,
             setupPasswordExpire: { $gt: new Date() },
-        }).select('+setupPasswordToken');
+        }).select('+setupPasswordToken +setupPasswordExpire');
 
         if (!user) {
+            console.warn(`[SetupPassword] Invalid or expired token hash: ${hashedToken}`);
             return res.status(400).json({
                 message: 'Invalid or expired password setup link.'
             });
@@ -315,6 +323,8 @@ export const setupPassword = async (
         user.setupPasswordExpire = null;
 
         await user.save();
+
+        console.log(`[SetupPassword] Password set successfully for user: ${user.email}`);
 
         return res.status(200).json({
             message: 'Password set successfully! Your account is now activated. You can sign in.'
