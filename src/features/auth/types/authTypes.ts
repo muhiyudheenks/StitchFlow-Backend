@@ -21,6 +21,7 @@ export interface PublicUser {
     fullName: string;
     email: string;
     role: "employee" | "manager" | "admin";
+    employeeType?: string | null;
     companyName?: string;
     isVerified: boolean;
     isBlock: boolean;

@@ -3,18 +3,19 @@ import { CreateManagerDto, UpdateManagerDto } from '../dto/admin.dto';
 
 export class ManagerRepository {
     async create(dto: CreateManagerDto): Promise<IUser> {
-        const password = dto.password || 'Manager@123';
+        const designation = dto.designation || 'Production Manager';
+
         const manager = new User({
             fullName: dto.fullName,
-            email: dto.email,
-            password: password,
-            role: 'manager',
-            companyName: dto.companyName,
-            department: dto.department || 'Management',
-            designation: dto.designation || 'Manager',
+            email: dto.email.toLowerCase(),
             phone: dto.phone,
+            role: 'manager',
+            employeeType: null,
+            department: 'Production',
+            designation,
+            managerId: null,
             status: 'active',
-            isVerified: true,
+            isVerified: false,
             isBlock: false,
         });
         return await manager.save();
@@ -41,9 +42,10 @@ export class ManagerRepository {
     }
 
     async update(id: string, dto: UpdateManagerDto): Promise<IUser | null> {
+        const updateData: any = { ...dto, role: 'manager', employeeType: null };
         return await User.findOneAndUpdate(
             { _id: id, role: 'manager' },
-            { $set: dto },
+            { $set: updateData },
             { new: true, runValidators: true }
         );
     }

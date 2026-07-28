@@ -11,9 +11,39 @@ export class ManagerService {
     async createManager(dto: CreateManagerDto, adminName: string = 'Admin') {
         const existing = await this.repo.findByEmail(dto.email);
         if (existing) {
+            if (!existing.isVerified || existing.setupPasswordToken) {
+                if (dto.fullName) existing.fullName = dto.fullName;
+                if (dto.phone) existing.phone = dto.phone;
+
+                const { resendSetupPasswordToken } = await import('../../../shared/services/invitationService');
+                await resendSetupPasswordToken(existing);
+
+                await this.activityRepo.logActivity(
+                    adminName,
+                    'admin',
+                    `Resent setup password link to unverified manager ${existing.fullName}`,
+                    'Manager',
+                    `Email: ${existing.email}`
+                );
+
+                return existing.toPublicJSON();
+            }
             throw new Error('Email is already registered');
         }
+
         const manager = await this.repo.create(dto);
+        console.log(`[ManagerService] User document created for ${manager.email} in MongoDB`);
+
+        // Generate setup password token and send invitation email
+        try {
+            const { resendSetupPasswordToken } = await import('../../../shared/services/invitationService');
+            await resendSetupPasswordToken(manager);
+        } catch (emailErr: any) {
+            console.error(`[ManagerService] Rolling back manager creation for ${manager.email} due to email failure`);
+            await this.repo.delete(manager._id.toString());
+            throw new Error(`Failed to send invitation email: ${emailErr.message || emailErr}`);
+        }
+
         await this.activityRepo.logActivity(
             adminName,
             'admin',
@@ -21,6 +51,7 @@ export class ManagerService {
             'Manager',
             `Email: ${manager.email}`
         );
+
         return manager.toPublicJSON();
     }
 

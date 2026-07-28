@@ -1,21 +1,27 @@
 import User, { IUser } from '../../auth/models/userModel';
 import { CreateEmployeeDto, UpdateEmployeeDto } from '../dto/admin.dto';
+import { EMPLOYEE_TYPE_TO_DESIGNATION } from '../../../shared/constants/userSchema.constants';
 
 export class EmployeeRepository {
     async create(dto: CreateEmployeeDto): Promise<IUser> {
-        const password = dto.password || 'Employee@123';
+        let employeeType = dto.employeeType || 'stitching_worker';
+        if (employeeType === 'Stitching Worker') employeeType = 'stitching_worker';
+        if (employeeType === 'Cutting Worker') employeeType = 'cutting_worker';
+        if (employeeType === 'Finishing Worker') employeeType = 'finishing_worker';
+
+        let designation = dto.designation || EMPLOYEE_TYPE_TO_DESIGNATION[employeeType] || 'Stitching Operator';
+
         const employee = new User({
             fullName: dto.fullName,
-            email: dto.email,
-            password: password,
-            role: 'employee',
-            companyName: dto.companyName,
-            managerId: dto.managerId || null,
-            department: dto.department || 'General',
-            designation: dto.designation || 'Staff',
+            email: dto.email.toLowerCase(),
             phone: dto.phone,
-            status: dto.status || 'active',
-            isVerified: true,
+            employeeType,
+            role: 'employee',
+            department: 'Production',
+            designation,
+            managerId: null,
+            status: 'active',
+            isVerified: false,
             isBlock: false,
         });
         return await employee.save();

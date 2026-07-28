@@ -1,18 +1,15 @@
 export interface CreateEmployeeDto {
     fullName: string;
     email: string;
-    password?: string;
-    companyName?: string;
-    managerId?: string;
-    department?: string;
-    designation?: string;
     phone?: string;
-    status?: 'active' | 'inactive' | 'on_leave';
+    employeeType?: string;
+    designation?: string;
 }
 
 export interface UpdateEmployeeDto {
     fullName?: string;
     email?: string;
+    employeeType?: string | null;
     companyName?: string;
     managerId?: string;
     department?: string;
@@ -25,11 +22,8 @@ export interface UpdateEmployeeDto {
 export interface CreateManagerDto {
     fullName: string;
     email: string;
-    password?: string;
-    companyName?: string;
-    department?: string;
-    designation?: string;
     phone?: string;
+    designation?: string;
 }
 
 export interface UpdateManagerDto {
@@ -39,6 +33,7 @@ export interface UpdateManagerDto {
     department?: string;
     designation?: string;
     phone?: string;
+    status?: 'active' | 'inactive' | 'on_leave';
     isBlock?: boolean;
 }
 
@@ -70,7 +65,7 @@ export interface UpdateProductionDto {
 
 export interface CreateInventoryItemDto {
     itemName: string;
-    category: string;
+    category?: string;
     stockQuantity: number;
     minStockLevel: number;
     unit?: string;
@@ -87,6 +82,23 @@ export interface UpdateInventoryItemDto {
     price?: number;
     description?: string;
     status?: 'in_stock' | 'low_stock' | 'out_of_stock';
+}
+
+export interface StockInDto {
+    inventoryId: string;
+    quantity: number;
+    unit?: string;
+    supplier?: string;
+    reason: string;
+    notes?: string;
+}
+
+export interface StockOutDto {
+    inventoryId: string;
+    quantity: number;
+    reason: string;
+    productionBatch?: string;
+    notes?: string;
 }
 
 export interface StockAdjustDto {

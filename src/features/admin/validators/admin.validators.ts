@@ -1,62 +1,57 @@
 import { z } from 'zod';
+import { MANAGER_DESIGNATIONS, EMPLOYEE_DESIGNATIONS } from '../../../shared/constants/userSchema.constants';
+
+export { MANAGER_DESIGNATIONS, EMPLOYEE_DESIGNATIONS };
 
 export const createEmployeeSchema = z.object({
     fullName: z.string().min(2, 'Full name must be at least 2 characters'),
     email: z.string().email('Invalid email address'),
-    password: z.string().min(6, 'Password must be at least 6 characters').optional(),
-    companyName: z.string().optional(),
-    managerId: z.string().optional(),
-    department: z.string().optional(),
-    designation: z.string().optional(),
     phone: z.string().optional(),
-    status: z.enum(['active', 'inactive', 'on_leave']).optional(),
+    employeeType: z.string().optional(),
+    designation: z.string().optional(),
 });
 
 export const updateEmployeeSchema = z.object({
     fullName: z.string().min(2).optional(),
+    phone: z.string().optional(),
+    employeeType: z.string().optional(),
+    department: z.string().optional(),
+    managerId: z.string().optional(),
+    status: z.enum(['active', 'inactive', 'on_leave']).optional(),
     email: z.string().email().optional(),
     companyName: z.string().optional(),
-    managerId: z.string().optional(),
-    department: z.string().optional(),
     designation: z.string().optional(),
-    phone: z.string().optional(),
-    status: z.enum(['active', 'inactive', 'on_leave']).optional(),
     isBlock: z.boolean().optional(),
 });
 
 export const createManagerSchema = z.object({
     fullName: z.string().min(2, 'Full name must be at least 2 characters'),
     email: z.string().email('Invalid email address'),
-    password: z.string().min(6, 'Password must be at least 6 characters').optional(),
-    companyName: z.string().optional(),
-    department: z.string().optional(),
-    designation: z.string().optional(),
     phone: z.string().optional(),
+    designation: z.string().optional(),
 });
 
 export const updateManagerSchema = z.object({
     fullName: z.string().min(2).optional(),
-    email: z.string().email().optional(),
-    companyName: z.string().optional(),
+    phone: z.string().optional(),
     department: z.string().optional(),
     designation: z.string().optional(),
-    phone: z.string().optional(),
+    status: z.enum(['active', 'inactive', 'on_leave']).optional(),
+    email: z.string().email().optional(),
     isBlock: z.boolean().optional(),
 });
 
 export const assignEmployeesSchema = z.object({
-    employeeIds: z.array(z.string()).min(1, 'At least one employee ID is required'),
+    employeeIds: z.array(z.string().min(1, 'Employee ID is required')),
 });
 
 export const createProductionSchema = z.object({
-    title: z.string().min(1, 'Production title is required'),
-    targetQuantity: z.number().min(1, 'Target quantity must be greater than 0'),
-    completedQuantity: z.number().min(0).optional(),
+    title: z.string().min(1, 'Title is required'),
+    targetQuantity: z.number().min(1, 'Target quantity must be at least 1'),
     managerId: z.string().optional(),
     startDate: z.string().optional(),
     endDate: z.string().optional(),
     notes: z.string().optional(),
-    status: z.enum(['pending', 'in_progress', 'completed', 'delayed']).optional(),
 });
 
 export const updateProductionSchema = z.object({

@@ -13,9 +13,8 @@ export class EmployeeService {
         if (existing) {
             if (!existing.isVerified || existing.setupPasswordToken) {
                 if (dto.fullName) existing.fullName = dto.fullName;
-                if (dto.department) existing.department = dto.department;
-                if (dto.designation) existing.designation = dto.designation;
-                if (dto.managerId) existing.managerId = dto.managerId as any;
+                if (dto.phone) existing.phone = dto.phone;
+                if (dto.employeeType) existing.employeeType = dto.employeeType as any;
 
                 const { resendSetupPasswordToken } = await import('../../../shared/services/invitationService');
                 await resendSetupPasswordToken(existing);
@@ -32,7 +31,20 @@ export class EmployeeService {
             }
             throw new Error('Email is already registered');
         }
+
         const employee = await this.repo.create(dto);
+        console.log(`[EmployeeService] User document created for ${employee.email} in MongoDB`);
+
+        // Generate setup password token and send invitation email
+        try {
+            const { resendSetupPasswordToken } = await import('../../../shared/services/invitationService');
+            await resendSetupPasswordToken(employee);
+        } catch (emailErr: any) {
+            console.error(`[EmployeeService] Rolling back employee creation for ${employee.email} due to email failure`);
+            await this.repo.delete(employee._id.toString());
+            throw new Error(`Failed to send invitation email: ${emailErr.message || emailErr}`);
+        }
+
         await this.activityRepo.logActivity(
             adminName,
             'admin',
@@ -40,6 +52,7 @@ export class EmployeeService {
             'Employee',
             `Email: ${employee.email}`
         );
+
         return employee.toPublicJSON();
     }
 
@@ -85,6 +98,7 @@ export class EmployeeService {
                 { email: searchRegex },
                 { department: searchRegex },
                 { designation: searchRegex },
+                { employeeType: searchRegex },
             ];
         }
 
@@ -112,7 +126,8 @@ export class EmployeeService {
                 name: json.fullName,
                 fullName: json.fullName,
                 email: json.email,
-                department: json.department || 'General',
+                employeeType: json.employeeType || 'stitching_worker',
+                department: json.department || 'Production',
                 designation: json.designation || 'Staff',
                 role: json.role,
                 status: formattedStatus,

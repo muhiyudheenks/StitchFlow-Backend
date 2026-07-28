@@ -1,15 +1,50 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import type { PublicUser } from '../types/authTypes';
+import {
+    ADMIN_DESIGNATION,
+    ADMIN_DEPARTMENT,
+    MANAGER_DESIGNATIONS,
+    MANAGER_DESIGNATION_TO_DEPARTMENT,
+    EMPLOYEE_TYPE_TO_DESIGNATION,
+    EMPLOYEE_TYPE_TO_DEPARTMENT,
+} from '../../../shared/constants/userSchema.constants';
+
+export type EmployeeType =
+    | 'stitching_worker'
+    | 'finishing_worker'
+    | 'cutting_worker'
+    | 'ironing_worker'
+    | 'packing_worker'
+    | 'qc_inspector'
+    | 'helper'
+    | 'store_keeper'
+    | 'machine_operator'
+    | 'quality_checker'
+    | 'iron_staff'
+    | null;
+
+export type DepartmentType =
+    | 'Production'
+    | 'Quality Control'
+    | 'Finishing'
+    | 'Inventory'
+    | 'Packing'
+    | 'Maintenance'
+    | 'Quality'
+    | 'HR'
+    | 'Accounts'
+    | 'Administration';
 
 export interface IUser extends Document {
     fullName: string;
     email: string;
     password?: string;
     role: "employee" | "manager" | "admin";
+    employeeType?: EmployeeType;
     companyName?: string;
     managerId?: mongoose.Types.ObjectId | string;
-    department?: string;
+    department?: DepartmentType;
     designation?: string;
     phone?: string;
     status?: "active" | "inactive" | "on_leave";
@@ -20,7 +55,7 @@ export interface IUser extends Document {
     createdAt: Date;
     updatedAt: Date;
     comparePassword(candidatePassword: string): Promise<boolean>;
-    toPublicJSON(): PublicUser & { managerId?: string; department?: string; designation?: string; phone?: string; status?: string; setupPasswordExpire?: Date };
+    toPublicJSON(): PublicUser & { managerId?: string; employeeType?: EmployeeType; department?: string; designation?: string; phone?: string; status?: string; setupPasswordExpire?: Date };
 }
 
 const userSchema = new Schema<IUser>(
@@ -47,6 +82,24 @@ const userSchema = new Schema<IUser>(
             enum: ["employee", "admin", "manager"],
             default: "employee",
         },
+        employeeType: {
+            type: String,
+            enum: [
+                'stitching_worker',
+                'finishing_worker',
+                'cutting_worker',
+                'ironing_worker',
+                'packing_worker',
+                'qc_inspector',
+                'helper',
+                'store_keeper',
+                'machine_operator',
+                'quality_checker',
+                'iron_staff',
+                null
+            ],
+            default: null,
+        },
         companyName: {
             type: String,
             trim: true,
@@ -58,8 +111,19 @@ const userSchema = new Schema<IUser>(
         },
         department: {
             type: String,
-            trim: true,
-            default: 'General',
+            enum: [
+                'Production',
+                'Quality Control',
+                'Finishing',
+                'Inventory',
+                'Packing',
+                'Maintenance',
+                'Quality',
+                'HR',
+                'Accounts',
+                'Administration'
+            ],
+            default: 'Production',
         },
         designation: {
             type: String,
@@ -97,9 +161,31 @@ const userSchema = new Schema<IUser>(
 );
 
 userSchema.pre<IUser>('save', async function (next) {
-    if (!this.isModified('password') || !this.password) return next();
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
+    // Handle password hashing if modified
+    if (this.isModified('password') && this.password) {
+        const salt = await bcrypt.genSalt(10);
+        this.password = await bcrypt.hash(this.password, salt);
+    }
+
+    // Role-based designation & department standardization
+    if (this.role === 'admin') {
+        this.employeeType = null;
+        this.designation = ADMIN_DESIGNATION;
+        this.department = ADMIN_DEPARTMENT as any;
+    } else if (this.role === 'manager') {
+        this.employeeType = null;
+        if (!this.designation || !MANAGER_DESIGNATIONS.includes(this.designation as any)) {
+            this.designation = 'Production Manager';
+        }
+        this.department = (MANAGER_DESIGNATION_TO_DEPARTMENT[this.designation] || 'Production') as any;
+    } else if (this.role === 'employee') {
+        if (!this.employeeType) {
+            this.employeeType = 'stitching_worker';
+        }
+        this.designation = EMPLOYEE_TYPE_TO_DESIGNATION[this.employeeType] || 'Stitching Worker';
+        this.department = (EMPLOYEE_TYPE_TO_DEPARTMENT[this.employeeType] || 'Production') as any;
+    }
+
     next();
 });
 
@@ -111,16 +197,34 @@ userSchema.methods.comparePassword = function (
     return bcrypt.compare(candidatePassword, this.password);
 };
 
-userSchema.methods.toPublicJSON = function (this: IUser): PublicUser & { managerId?: string; department?: string; designation?: string; phone?: string; status?: string; setupPasswordExpire?: Date } {
+userSchema.methods.toPublicJSON = function (this: IUser): PublicUser & { managerId?: string; employeeType?: EmployeeType; department?: string; designation?: string; phone?: string; status?: string; setupPasswordExpire?: Date } {
+    let finalDesignation = this.designation;
+    let finalDepartment = this.department;
+
+    if (this.role === 'admin') {
+        finalDesignation = ADMIN_DESIGNATION;
+        finalDepartment = ADMIN_DEPARTMENT as any;
+    } else if (this.role === 'manager') {
+        if (!finalDesignation || !MANAGER_DESIGNATIONS.includes(finalDesignation as any)) {
+            finalDesignation = 'Production Manager';
+        }
+        finalDepartment = (MANAGER_DESIGNATION_TO_DEPARTMENT[finalDesignation] || 'Production') as any;
+    } else if (this.role === 'employee') {
+        const et = this.employeeType || 'stitching_worker';
+        finalDesignation = EMPLOYEE_TYPE_TO_DESIGNATION[et] || 'Stitching Worker';
+        finalDepartment = (EMPLOYEE_TYPE_TO_DEPARTMENT[et] || 'Production') as any;
+    }
+
     return {
         id: this._id.toString(),
         fullName: this.fullName,
         email: this.email,
         role: this.role,
+        employeeType: this.employeeType ?? null,
         companyName: this.companyName,
         managerId: this.managerId ? this.managerId.toString() : undefined,
-        department: this.department,
-        designation: this.designation,
+        department: finalDepartment,
+        designation: finalDesignation,
         phone: this.phone,
         status: this.status,
         isVerified: this.isVerified,
@@ -129,6 +233,6 @@ userSchema.methods.toPublicJSON = function (this: IUser): PublicUser & { manager
     };
 };
 
-const User: Model<IUser> = mongoose.model<IUser>('User', userSchema);
+const User: Model<IUser> = mongoose.models.User || mongoose.model<IUser>('User', userSchema);
 
 export default User;
