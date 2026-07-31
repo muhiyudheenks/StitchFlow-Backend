@@ -3,6 +3,7 @@ import { ActivityRepository } from '../repositories/activity.repository';
 import { CreateManagerDto, UpdateManagerDto } from '../dto/admin.dto';
 import { PaginationQuery } from '../types/admin.types';
 import { getPaginationOptions, buildPaginationMeta } from '../utils/admin.utils';
+import { AppError } from '../../../shared/errors';
 
 export class ManagerService {
     private repo = new ManagerRepository();
@@ -28,7 +29,7 @@ export class ManagerService {
 
                 return existing.toPublicJSON();
             }
-            throw new Error('Email is already registered');
+            throw AppError.conflict('Email is already registered');
         }
 
         const manager = await this.repo.create(dto);
@@ -41,7 +42,7 @@ export class ManagerService {
         } catch (emailErr: any) {
             console.error(`[ManagerService] Rolling back manager creation for ${manager.email} due to email failure`);
             await this.repo.delete(manager._id.toString());
-            throw new Error(`Failed to send invitation email: ${emailErr.message || emailErr}`);
+            throw AppError.internal(`Failed to send invitation email: ${emailErr.message || emailErr}`);
         }
 
         await this.activityRepo.logActivity(
@@ -56,7 +57,12 @@ export class ManagerService {
     }
 
     async getManagers(query: PaginationQuery) {
-        const { page, limit, skip } = getPaginationOptions(query);
+        const rawLimit = String(query.limit ?? '');
+        const isAll = !query.page || rawLimit === 'all';
+        const page = Math.max(1, parseInt(String(query.page || 1), 10) || 1);
+        const limit = isAll ? 1000 : Math.min(100, Math.max(1, parseInt(String(query.limit || 10), 10) || 10));
+        const skip = (page - 1) * limit;
+
         const filter: any = {};
 
         if (query.search) {
@@ -73,8 +79,14 @@ export class ManagerService {
         const result = await Promise.all(
             managers.map(async (m) => {
                 const employees = await this.repo.getManagedEmployees(m._id.toString());
+                const pub = m.toPublicJSON();
                 return {
-                    ...m.toPublicJSON(),
+                    ...pub,
+                    _id: m._id.toString(),
+                    id: m._id.toString(),
+                    name: m.fullName,
+                    fullName: m.fullName,
+                    email: m.email,
                     teamSize: employees.length,
                 };
             })
@@ -89,7 +101,7 @@ export class ManagerService {
     async getManagerById(id: string) {
         const manager = await this.repo.findById(id);
         if (!manager) {
-            throw new Error('Manager not found');
+            throw AppError.notFound('Manager not found');
         }
         const team = await this.repo.getManagedEmployees(id);
         return {
@@ -101,7 +113,7 @@ export class ManagerService {
     async updateManager(id: string, dto: UpdateManagerDto, adminName: string = 'Admin') {
         const manager = await this.repo.update(id, dto);
         if (!manager) {
-            throw new Error('Manager not found');
+            throw AppError.notFound('Manager not found');
         }
         await this.activityRepo.logActivity(
             adminName,
@@ -115,7 +127,7 @@ export class ManagerService {
     async deleteManager(id: string, adminName: string = 'Admin') {
         const manager = await this.repo.delete(id);
         if (!manager) {
-            throw new Error('Manager not found');
+            throw AppError.notFound('Manager not found');
         }
         await this.activityRepo.logActivity(
             adminName,
@@ -129,7 +141,7 @@ export class ManagerService {
     async assignEmployees(managerId: string, employeeIds: string[], adminName: string = 'Admin') {
         const manager = await this.repo.findById(managerId);
         if (!manager) {
-            throw new Error('Manager not found');
+            throw AppError.notFound('Manager not found');
         }
         const count = await this.repo.assignEmployeesToManager(managerId, employeeIds);
         await this.activityRepo.logActivity(
@@ -144,7 +156,7 @@ export class ManagerService {
     async getManagerSummary(managerId: string) {
         const manager = await this.repo.findById(managerId);
         if (!manager) {
-            throw new Error('Manager not found');
+            throw AppError.notFound('Manager not found');
         }
         const team = await this.repo.getManagedEmployees(managerId);
         return {

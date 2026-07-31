@@ -1,4 +1,4 @@
-import { NextFunction, Request, Response } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import User from '../models/userModel';
 import Otp from '../models/otpModel';
@@ -12,7 +12,7 @@ import type {
     OtpPurpose,
 } from '../types/authTypes';
 import { loginValidator, resendOtpValidator, verifyOtpValidator } from '../validators/auth-validation';
-import z from 'zod';
+import { asyncHandler, AppError } from '../../../shared/errors';
 
 const OTP_EXPIRES_MINUTES = Number(process.env.OTP_EXPIRES_MINUTES) || 5;
 
@@ -31,332 +31,238 @@ const createAndSendOtp = async (email: string, purpose: OtpPurpose) => {
 };
 
 // @route POST /api/auth/login
-export const login = async (
-    req: Request<unknown, unknown, LoginRequestBody>,
-    res: Response,
-    next: NextFunction
-): Promise<Response | void> => {
-    try {
-        const result = loginValidator.safeParse(req.body);
-
-        if (!result.success) {
-            return res.status(400).json({
-                message: "Email and password are required.",
-                errors: z.flattenError(result.error).fieldErrors,
-            });
-        }
-
-        const { email, password } = result.data;
-
-        const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
-
-        if (!user) {
-            return res.status(401).json({ message: 'Invalid email or password.' });
-        }
-
-        const isMatch = await user.comparePassword(password);
-        if (!isMatch) {
-            return res.status(401).json({ message: 'Invalid email or password.' });
-        }
-        const emailResponse = await createAndSendOtp(user.email, 'login');
-
-        return res.status(200).json({
-            message: 'OTP sent to your email for login verification.',
-            requiresOtp: true,
-            email: user.email,
-            emailResponse,
-        });
-    } catch (err) {
-        next(err);
+export const login = asyncHandler(async (req: Request<unknown, unknown, LoginRequestBody>, res: Response, next: NextFunction) => {
+    const result = loginValidator.safeParse(req.body);
+    if (!result.success) {
+        throw AppError.badRequest('Email and password are required.');
     }
-};
+
+    const { email, password } = result.data;
+    const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
+
+    if (!user) {
+        throw AppError.unauthorized('Invalid email or password.');
+    }
+
+    const isMatch = await user.comparePassword(password);
+    if (!isMatch) {
+        throw AppError.unauthorized('Invalid email or password.');
+    }
+    const emailResponse = await createAndSendOtp(user.email, 'login');
+
+    return res.status(200).json({
+        message: 'OTP sent to your email for login verification.',
+        requiresOtp: true,
+        email: user.email,
+        emailResponse,
+    });
+});
 
 // @route POST /api/auth/verify-otp
-export const verifyOtp = async (
-    req: Request<unknown, unknown, VerifyOtpRequestBody>,
-    res: Response,
-    next: NextFunction
-): Promise<Response | void> => {
-    try {
-        const result = verifyOtpValidator.safeParse(req.body);
+export const verifyOtp = asyncHandler(async (req: Request<unknown, unknown, VerifyOtpRequestBody>, res: Response, next: NextFunction) => {
+    const result = verifyOtpValidator.safeParse(req.body);
+    if (!result.success) {
+        throw AppError.badRequest('Email, code, and purpose are required.');
+    }
 
-        if (!result.success) {
-            return res.status(400).json({
-                message: "Email, code, and purpose are required.",
-                errors: z.flattenError(result.error).fieldErrors,
-            });
-        }
+    const { email, code, purpose } = result.data;
 
-        const { email, code, purpose } = result.data;
+    const otpRecord = await Otp.findOne({
+        email: email.toLowerCase(),
+        code,
+        purpose,
+    });
 
-        const otpRecord = await Otp.findOne({
-            email: email.toLowerCase(),
-            code,
-            purpose,
-        });
+    if (!otpRecord) {
+        throw AppError.badRequest('Invalid or expired OTP.');
+    }
 
-        if (!otpRecord) {
-            return res.status(400).json({ message: 'Invalid or expired OTP.' });
-        }
+    if (otpRecord.expiresAt < new Date()) {
+        await Otp.deleteOne({ _id: otpRecord._id });
+        throw AppError.badRequest('OTP has expired. Please request a new one.');
+    }
 
-        if (otpRecord.expiresAt < new Date()) {
-            await Otp.deleteOne({ _id: otpRecord._id });
-            return res.status(400).json({ message: 'OTP has expired. Please request a new one.' });
-        }
+    await Otp.deleteMany({ email: email.toLowerCase(), purpose });
 
-        await Otp.deleteMany({ email: email.toLowerCase(), purpose });
-
-        if (purpose === 'forgot-password') {
-            return res.status(200).json({
-                message: 'OTP verified successfully.',
-                email: email.toLowerCase(),
-                resetAllowed: true,
-            });
-        }
-
-        const user = await User.findOneAndUpdate(
-            { email: email.toLowerCase() },
-            { isVerified: true },
-            { new: true }
-        );
-
-        if (!user) {
-            return res.status(404).json({ message: 'User not found.' });
-        }
-
-        const token = generateToken(user._id.toString());
-
-        res.cookie('token', token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-        });
-
-        res.cookie('jwt', token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            maxAge: 7 * 24 * 60 * 60 * 1000,
-        });
-
+    if (purpose === 'forgot-password') {
         return res.status(200).json({
             message: 'OTP verified successfully.',
-            token,
-            user: user.toPublicJSON(),
+            email: email.toLowerCase(),
+            resetAllowed: true,
         });
-    } catch (err) {
-        next(err);
     }
-};
+
+    const user = await User.findOneAndUpdate(
+        { email: email.toLowerCase() },
+        { isVerified: true },
+        { new: true }
+    );
+
+    if (!user) {
+        throw AppError.notFound('User not found.');
+    }
+
+    const token = generateToken(user._id.toString());
+
+    res.cookie('token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.cookie('jwt', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.status(200).json({
+        message: 'OTP verified successfully.',
+        token,
+        user: user.toPublicJSON(),
+    });
+});
 
 // @route POST /api/auth/resend-otp
-export const resendOtp = async (
-    req: Request<unknown, unknown, ResendOtpRequestBody>,
-    res: Response,
-    next: NextFunction
-): Promise<Response | void> => {
-    try {
-        const result = resendOtpValidator.safeParse(req.body);
-
-        if (!result.success) {
-            return res.status(400).json({
-                message: "Email and purpose are required.",
-                errors: z.flattenError(result.error).fieldErrors,
-            });
-        }
-
-        const { email, purpose } = result.data;
-
-        const user = await User.findOne({ email: email.toLowerCase() });
-        if (!user) {
-            return res.status(404).json({ message: 'User not found.' });
-        }
-
-        const emailResponse = await createAndSendOtp(user.email, purpose);
-
-        return res.status(200).json({
-            message: 'A new OTP has been sent to your email.',
-            email: user.email,
-            emailResponse,
-        });
-    } catch (err) {
-        next(err);
+export const resendOtp = asyncHandler(async (req: Request<unknown, unknown, ResendOtpRequestBody>, res: Response, next: NextFunction) => {
+    const result = resendOtpValidator.safeParse(req.body);
+    if (!result.success) {
+        throw AppError.badRequest('Email and purpose are required.');
     }
-};
 
-export const resetPassword = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-): Promise<Response | void> => {
-    try {
-        const { email, newpassword } = req.body;
-        if (!email || !newpassword) {
-            return res.status(400).json({ message: 'Email and new password are required.' });
-        }
-        const user = await User.findOne({ email: email.toLowerCase() }).select("+password");
-        if (!user) {
-            return res.status(404).json({
-                message: "Email address not found."
-            });
-        }
-        user.password = newpassword;
-        await user.save();
-        await Otp.deleteMany({ email: user.email, purpose: 'forgot-password' });
+    const { email, purpose } = result.data;
 
-        return res.status(200).json({
-            message: "Password reset successfully."
-        });
-    } catch (error) {
-        next(error);
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+        throw AppError.notFound('User not found.');
     }
-};
 
-export const forgotPassword = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-): Promise<Response | void> => {
-    try {
-        const { email } = req.body;
-        if (!email) {
-            return res.status(400).json({ message: 'Email is required.' });
-        }
+    const emailResponse = await createAndSendOtp(user.email, purpose);
 
-        const user = await User.findOne({ email: email.toLowerCase() });
+    return res.status(200).json({
+        message: 'A new OTP has been sent to your email.',
+        email: user.email,
+        emailResponse,
+    });
+});
 
-        if (!user) {
-            return res.status(404).json({
-                message: "Email address not found."
-            });
-        }
-
-        const emailResponse = await createAndSendOtp(user.email, 'forgot-password');
-
-        return res.status(200).json({
-            message: "OTP sent to your email for password reset.",
-            email: user.email,
-            requiresOtp: true,
-            emailResponse,
-        });
-
-    } catch (error) {
-        next(error);
+export const resetPassword = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+    const { email, newpassword } = req.body;
+    if (!email || !newpassword) {
+        throw AppError.badRequest('Email and new password are required.');
     }
-};
-
-export const verifySetupToken = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-): Promise<Response | void> => {
-    try {
-        const tokenInput = req.params.token || (req.query.token as string);
-        if (!tokenInput) {
-            return res.status(400).json({ message: 'Token is required.' });
-        }
-
-        const rawToken = decodeURIComponent(tokenInput.toString().trim());
-        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
-
-        const user = await User.findOne({
-            setupPasswordToken: hashedToken,
-            setupPasswordExpire: { $gt: new Date() },
-        }).select('+setupPasswordToken +setupPasswordExpire');
-
-        if (!user) {
-            console.warn(`[VerifySetupToken] Invalid or expired token hash: ${hashedToken}`);
-            return res.status(400).json({
-                message: 'Invalid or expired password setup link. Please contact your administrator.'
-            });
-        }
-
-        console.log(`[VerifySetupToken] Successfully verified token for: ${user.email}`);
-
-        return res.status(200).json({
-            valid: true,
-            email: user.email,
-            fullName: user.fullName,
-            role: user.role,
-        });
-    } catch (error) {
-        next(error);
+    const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
+    if (!user) {
+        throw AppError.notFound('Email address not found.');
     }
-};
+    user.password = newpassword;
+    await user.save();
+    await Otp.deleteMany({ email: user.email, purpose: 'forgot-password' });
 
-export const setupPassword = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-): Promise<Response | void> => {
-    try {
-        const { token: tokenInput, newPassword, confirmPassword } = req.body;
-        if (!tokenInput || !newPassword) {
-            return res.status(400).json({ message: 'Token and new password are required.' });
-        }
-        if (confirmPassword && newPassword !== confirmPassword) {
-            return res.status(400).json({ message: 'Passwords do not match.' });
-        }
-        if (newPassword.length < 6) {
-            return res.status(400).json({ message: 'Password must be at least 6 characters.' });
-        }
+    return res.status(200).json({
+        message: 'Password reset successfully.',
+    });
+});
 
-        const rawToken = decodeURIComponent(tokenInput.toString().trim());
-        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
-
-        const user = await User.findOne({
-            setupPasswordToken: hashedToken,
-            setupPasswordExpire: { $gt: new Date() },
-        }).select('+setupPasswordToken +setupPasswordExpire');
-
-        if (!user) {
-            console.warn(`[SetupPassword] Invalid or expired token hash: ${hashedToken}`);
-            return res.status(400).json({
-                message: 'Invalid or expired password setup link.'
-            });
-        }
-
-        user.password = newPassword;
-        user.isVerified = true;
-        user.setupPasswordToken = null;
-        user.setupPasswordExpire = null;
-
-        await user.save();
-
-        console.log(`[SetupPassword] Password set successfully for user: ${user.email}`);
-
-        return res.status(200).json({
-            message: 'Password set successfully! Your account is now activated. You can sign in.'
-        });
-    } catch (error) {
-        next(error);
+export const forgotPassword = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+    const { email } = req.body;
+    if (!email) {
+        throw AppError.badRequest('Email is required.');
     }
-};
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+        throw AppError.notFound('Email address not found.');
+    }
+
+    const emailResponse = await createAndSendOtp(user.email, 'forgot-password');
+
+    return res.status(200).json({
+        message: 'OTP sent to your email for password reset.',
+        email: user.email,
+        requiresOtp: true,
+        emailResponse,
+    });
+});
+
+export const verifySetupToken = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+    const tokenInput = req.params.token || (req.query.token as string);
+    if (!tokenInput) {
+        throw AppError.badRequest('Token is required.');
+    }
+
+    const rawToken = decodeURIComponent(tokenInput.toString().trim());
+    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+    const user = await User.findOne({
+        setupPasswordToken: hashedToken,
+        setupPasswordExpire: { $gt: new Date() },
+    }).select('+setupPasswordToken +setupPasswordExpire');
+
+    if (!user) {
+        throw AppError.badRequest('Invalid or expired password setup link. Please contact your administrator.');
+    }
+
+    return res.status(200).json({
+        valid: true,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+    });
+});
+
+export const setupPassword = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+    const { token: tokenInput, newPassword, confirmPassword } = req.body;
+    if (!tokenInput || !newPassword) {
+        throw AppError.badRequest('Token and new password are required.');
+    }
+    if (confirmPassword && newPassword !== confirmPassword) {
+        throw AppError.badRequest('Passwords do not match.');
+    }
+    if (newPassword.length < 6) {
+        throw AppError.badRequest('Password must be at least 6 characters.');
+    }
+
+    const rawToken = decodeURIComponent(tokenInput.toString().trim());
+    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+    const user = await User.findOne({
+        setupPasswordToken: hashedToken,
+        setupPasswordExpire: { $gt: new Date() },
+    }).select('+setupPasswordToken +setupPasswordExpire');
+
+    if (!user) {
+        throw AppError.badRequest('Invalid or expired password setup link.');
+    }
+
+    user.password = newPassword;
+    user.isVerified = true;
+    user.setupPasswordToken = null;
+    user.setupPasswordExpire = null;
+
+    await user.save();
+
+    return res.status(200).json({
+        message: 'Password set successfully! Your account is now activated. You can sign in.',
+    });
+});
 
 // @route POST /api/auth/logout
-export const logout = async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-): Promise<Response | void> => {
-    try {
-        res.cookie('token', '', {
-            httpOnly: true,
-            expires: new Date(0),
-            sameSite: 'lax',
-        });
-        res.cookie('jwt', '', {
-            httpOnly: true,
-            expires: new Date(0),
-            sameSite: 'lax',
-        });
-        return res.status(200).json({
-            success: true,
-            message: 'Logged out successfully.',
-        });
-    } catch (err) {
-        next(err);
-    }
-};
-
+export const logout = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+    res.cookie('token', '', {
+        httpOnly: true,
+        expires: new Date(0),
+        sameSite: 'lax',
+    });
+    res.cookie('jwt', '', {
+        httpOnly: true,
+        expires: new Date(0),
+        sameSite: 'lax',
+    });
+    return res.status(200).json({
+        success: true,
+        message: 'Logged out successfully.',
+    });
+});

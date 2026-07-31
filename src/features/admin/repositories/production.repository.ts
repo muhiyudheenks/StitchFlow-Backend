@@ -75,4 +75,31 @@ export class ProductionRepository {
             },
         ]);
     }
+
+    async aggregateTodayStats() {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const stats = await Production.aggregate([
+            {
+                $match: {
+                    $or: [
+                        { startDate: { $gte: startOfDay, $lte: endOfDay } },
+                        { status: 'in_progress' },
+                    ],
+                },
+            },
+            {
+                $group: {
+                    _id: null,
+                    todayTarget: { $sum: '$targetQuantity' },
+                    todayCompleted: { $sum: '$completedQuantity' },
+                },
+            },
+        ]);
+
+        return stats[0] || { todayTarget: 0, todayCompleted: 0 };
+    }
 }

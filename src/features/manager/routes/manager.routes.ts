@@ -9,8 +9,6 @@ import {
     getLeaveRequests,
     updateLeaveStatus,
     getProductionBatches,
-    createProductionBatch,
-    updateProductionBatch,
     getInventoryOverview,
     getReports,
 } from '../controllers/manager.controller';
@@ -34,10 +32,8 @@ router.get('/attendance', getAttendanceRecords);
 router.get('/leaves', getLeaveRequests);
 router.patch('/leaves/:id', updateLeaveStatus);
 
-// Production Batch Management
+// Production Batch Monitoring (Read-Only for Assigned Batches)
 router.get('/production', getProductionBatches);
-router.post('/production', createProductionBatch);
-router.put('/production/:id', updateProductionBatch);
 
 // Inventory (Read-Only)
 router.get('/inventory', getInventoryOverview);

@@ -1,5 +1,6 @@
+import { FilterQuery } from 'mongoose';
 import User from '../../auth/models/userModel';
-import SupportTicket, { ISupportTicket } from '../models/supportTicketModel';
+import SupportTicket, { ISupportTicket, IPopulatedSupportTicket } from '../models/supportTicketModel';
 import FAQ, { IFAQ } from '../models/faqModel';
 import SupportContact from '../models/supportContactModel';
 import CompanyDocument, { ICompanyDocument } from '../models/companyDocumentModel';
@@ -49,9 +50,9 @@ export class SupportService {
                 recipient: admin._id,
                 sender: userId,
                 title: `New ${role === 'manager' ? 'Manager' : 'Employee'} Support Ticket`,
-                message: `${user.fullName} logged ticket #${(ticket as any)._id.toString().slice(-6)}: "${ticket.subject}"`,
+                message: `${user.fullName} logged ticket #${ticket._id.toString().slice(-6)}: "${ticket.subject}"`,
                 type: 'TICKET',
-                referenceId: (ticket as any)._id.toString(),
+                referenceId: ticket._id.toString(),
             });
         }
 
@@ -62,11 +63,11 @@ export class SupportService {
     async getMyTickets(userId: string) {
         const tickets = await SupportTicket.find({ createdBy: userId })
             .sort({ createdAt: -1 })
-            .populate('assignedAdmin', 'fullName email');
+            .populate<{ assignedAdmin?: { _id: any; fullName?: string; email?: string } }>('assignedAdmin', 'fullName email');
 
-        return tickets.map((t: ISupportTicket) => ({
-            id: (t as any)._id.toString(),
-            ticketId: `TCK-${(t as any)._id.toString().slice(-6).toUpperCase()}`,
+        return (tickets as unknown as IPopulatedSupportTicket[]).map((t: IPopulatedSupportTicket) => ({
+            id: t._id.toString(),
+            ticketId: `TCK-${t._id.toString().slice(-6).toUpperCase()}`,
             category: t.category,
             subject: t.subject,
             description: t.description,
@@ -74,9 +75,9 @@ export class SupportService {
             status: t.status,
             attachment: t.attachment,
             resolution: t.resolution,
-            assignedAdmin: t.assignedAdmin ? (t.assignedAdmin as any).fullName : 'Unassigned',
-            createdAt: (t as any).createdAt ? new Date((t as any).createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString(),
-            updatedAt: (t as any).updatedAt ? new Date((t as any).updatedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString(),
+            assignedAdmin: t.assignedAdmin?.fullName || 'Unassigned',
+            createdAt: t.createdAt ? new Date(t.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString(),
+            updatedAt: t.updatedAt ? new Date(t.updatedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : new Date().toLocaleDateString(),
         }));
     }
 
@@ -88,19 +89,19 @@ export class SupportService {
         role?: string;
         search?: string;
     }) {
-        const query: any = {};
+        const query: FilterQuery<ISupportTicket> = {};
 
         if (filters.status && filters.status !== 'ALL') {
-            query.status = filters.status.toUpperCase();
+            query.status = filters.status.toUpperCase() as any;
         }
         if (filters.category && filters.category !== 'ALL') {
             query.category = filters.category;
         }
         if (filters.priority && filters.priority !== 'ALL') {
-            query.priority = filters.priority;
+            query.priority = filters.priority as any;
         }
         if (filters.role && filters.role !== 'ALL') {
-            query.role = filters.role.toLowerCase();
+            query.role = filters.role.toLowerCase() as any;
         }
         if (filters.search) {
             const regex = new RegExp(filters.search, 'i');
@@ -112,11 +113,11 @@ export class SupportService {
             .populate('createdBy', 'fullName email role department designation')
             .populate('assignedAdmin', 'fullName email');
 
-        return tickets.map((t: ISupportTicket) => ({
-            id: (t as any)._id.toString(),
-            ticketId: `TCK-${(t as any)._id.toString().slice(-6).toUpperCase()}`,
-            createdBy: (t.createdBy as any)?.fullName || 'User',
-            createdEmail: (t.createdBy as any)?.email || '',
+        return (tickets as unknown as IPopulatedSupportTicket[]).map((t: IPopulatedSupportTicket) => ({
+            id: t._id.toString(),
+            ticketId: `TCK-${t._id.toString().slice(-6).toUpperCase()}`,
+            createdBy: t.createdBy?.fullName || 'User',
+            createdEmail: t.createdBy?.email || '',
             role: t.role,
             category: t.category,
             subject: t.subject,
@@ -124,12 +125,12 @@ export class SupportService {
             priority: t.priority,
             status: t.status,
             attachment: t.attachment,
-            assignedAdmin: t.assignedAdmin ? (t.assignedAdmin as any).fullName : null,
-            assignedAdminId: t.assignedAdmin ? (t.assignedAdmin as any)._id?.toString() : null,
+            assignedAdmin: t.assignedAdmin?.fullName || null,
+            assignedAdminId: t.assignedAdmin?._id?.toString() || null,
             resolution: t.resolution || '',
             internalNotes: t.internalNotes || '',
-            createdAt: (t as any).createdAt ? new Date((t as any).createdAt).toLocaleString('en-IN') : new Date().toLocaleString(),
-            updatedAt: (t as any).updatedAt ? new Date((t as any).updatedAt).toLocaleString('en-IN') : new Date().toLocaleString(),
+            createdAt: t.createdAt ? new Date(t.createdAt).toLocaleString('en-IN') : new Date().toLocaleString(),
+            updatedAt: t.updatedAt ? new Date(t.updatedAt).toLocaleString('en-IN') : new Date().toLocaleString(),
         }));
     }
 
@@ -180,10 +181,10 @@ export class SupportService {
         await Notification.create({
             recipient: ticket.createdBy,
             sender: adminId,
-            title: `Support Ticket #${(ticket as any)._id.toString().slice(-6)} Updated`,
+            title: `Support Ticket #${ticket._id.toString().slice(-6)} Updated`,
             message: `Admin updated your ticket status to ${ticket.status}.${ticket.resolution ? ` Resolution: ${ticket.resolution}` : ''}`,
             type: 'TICKET',
-            referenceId: (ticket as any)._id.toString(),
+            referenceId: ticket._id.toString(),
         });
 
         return ticket;
@@ -203,7 +204,7 @@ export class SupportService {
             faqs = await FAQ.find({ active: true }).sort({ displayOrder: 1 });
         }
         return faqs.map((f: IFAQ) => ({
-            id: (f as any)._id.toString(),
+            id: f._id.toString(),
             question: f.question,
             answer: f.answer,
         }));
@@ -237,7 +238,7 @@ export class SupportService {
             docs = await CompanyDocument.find({ active: true });
         }
         return docs.map((d: ICompanyDocument) => ({
-            id: (d as any)._id.toString(),
+            id: d._id.toString(),
             title: d.title,
             fileUrl: d.fileUrl,
             category: d.category,
@@ -262,11 +263,11 @@ export class SupportService {
     async getLineManager(userId: string) {
         const employee = await User.findById(userId);
         let manager = null;
-        if (employee && (employee as any).managerId) {
-            manager = await User.findById((employee as any).managerId);
+        if (employee && employee.managerId) {
+            manager = await User.findById(employee.managerId);
         }
         if (!manager) {
-            manager = await User.findOne({ role: 'manager', isActive: { $ne: false } });
+            manager = await User.findOne({ role: 'manager', isBlock: { $ne: true } });
         }
         if (!manager) {
             return {
@@ -281,14 +282,14 @@ export class SupportService {
             };
         }
         return {
-            id: (manager as any)._id.toString(),
+            id: manager._id.toString(),
             fullName: manager.fullName || 'Line Manager',
-            employeeId: (manager as any).employeeId || 'EMP-MGR-001',
-            department: (manager as any).department || 'Production & Assembly',
-            phone: (manager as any).phoneNumber || '+91 98765 11223',
+            employeeId: `EMP-${manager._id.toString().slice(-6).toUpperCase()}`,
+            department: manager.department || 'Production & Assembly',
+            phone: manager.phone || '+91 98765 11223',
             email: manager.email,
             status: 'Online',
-            designation: (manager as any).designation || 'Production Manager',
+            designation: manager.designation || 'Production Manager',
         };
     }
 

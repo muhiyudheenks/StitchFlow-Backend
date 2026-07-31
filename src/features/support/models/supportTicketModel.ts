@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface ISupportTicket extends Document {
+    _id: mongoose.Types.ObjectId;
     employeeId?: mongoose.Types.ObjectId | string;
     managerId?: mongoose.Types.ObjectId | string;
     createdBy: mongoose.Types.ObjectId | string;
@@ -17,6 +18,21 @@ export interface ISupportTicket extends Document {
     resolvedAt?: Date;
     createdAt: Date;
     updatedAt: Date;
+}
+
+export interface IPopulatedUser {
+    _id: mongoose.Types.ObjectId | string;
+    fullName?: string;
+    email?: string;
+    role?: string;
+    department?: string;
+    designation?: string;
+}
+
+export interface IPopulatedSupportTicket extends Omit<ISupportTicket, 'createdBy' | 'assignedAdmin'> {
+    _id: mongoose.Types.ObjectId;
+    createdBy?: IPopulatedUser;
+    assignedAdmin?: IPopulatedUser;
 }
 
 const supportTicketSchema = new Schema<ISupportTicket>(

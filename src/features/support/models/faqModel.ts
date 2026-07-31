@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface IFAQ extends Document {
+    _id: mongoose.Types.ObjectId;
     question: string;
     answer: string;
     active: boolean;

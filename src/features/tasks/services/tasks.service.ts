@@ -1,6 +1,9 @@
 import Task from '../../manager/models/taskModel';
 import ProductionBatch from '../../production/models/productionBatchModel';
 import User from '../../auth/models/userModel';
+import { NotificationsService } from '../../notifications/services/notifications.service';
+
+const notifService = new NotificationsService();
 
 export class TaskService {
     async getAllTasks(filterQuery?: any) {
@@ -16,7 +19,7 @@ export class TaskService {
         }
 
         const tasks = await Task.find(query)
-            .populate('assignedEmployee', 'fullName email department designation')
+            .populate('assignedEmployee', 'fullName email department designation employeeType')
             .populate('batchId', 'batchName status')
             .populate('verifiedByManager', 'fullName email')
             .sort({ createdAt: -1 });
@@ -28,6 +31,7 @@ export class TaskService {
             batchName: t.batchId?.batchName || 'Batch',
             taskName: t.taskName || t.title || 'Task',
             operationType: t.operationType || 'Stitching',
+            workerType: t.workerType || 'Stitching',
             assignedEmployee: t.assignedEmployee?._id?.toString() || t.assignedTo?.toString() || '',
             assignedEmployeeName: t.assignedEmployee?.fullName || t.assignee || 'Unassigned',
             priority: t.priority || 'Medium',
@@ -57,25 +61,48 @@ export class TaskService {
             throw new Error('Production batch not found');
         }
 
+        if (batch.status === 'Completed' || batch.status === 'COMPLETED') {
+            throw new Error('Cannot assign tasks to a completed batch');
+        }
+
         const assignedEmployeeId = data.assignedEmployee || data.assignedTo || data.employeeId;
         if (!assignedEmployeeId) {
             throw new Error('Assigned Employee is required');
         }
 
-        // Validate employee exists
         const employee = await User.findById(assignedEmployeeId);
         if (!employee) {
             throw new Error('Assigned employee does not exist');
         }
 
+        // Validate employee belongs to batch members
+        const batchMembers = (batch.members || []).map((m: any) => m.toString());
+        if (batchMembers.length > 0 && !batchMembers.includes(assignedEmployeeId.toString())) {
+            throw new Error('Assigned employee does not belong to this production batch. Only batch members can be assigned tasks.');
+        }
+
+        const workerType = data.workerType || 'Stitching';
         const taskName = data.taskName || data.operation || data.title || 'Production Task';
         const targetQuantity = Number(data.targetQuantity || data.quantity || 100);
+
+        // Check duplicate active task
+        const duplicateTask = await Task.findOne({
+            batchId,
+            assignedEmployee: assignedEmployeeId,
+            taskName,
+            status: { $nin: ['Completed', 'Verified'] },
+        });
+
+        if (duplicateTask) {
+            throw new Error(`An active task '${taskName}' is already assigned to this employee in this batch.`);
+        }
 
         const task = new Task({
             batchId,
             assignedEmployee: assignedEmployeeId,
             taskName,
-            operationType: data.operationType || data.operation || 'Stitching',
+            workerType,
+            operationType: workerType,
             priority: data.priority || 'Medium',
             targetQuantity,
             completedQuantity: Number(data.completedQuantity || 0),
@@ -87,7 +114,6 @@ export class TaskService {
 
         await task.save();
 
-        // Automatically add employee to ProductionBatch members list without duplicates!
         await ProductionBatch.findByIdAndUpdate(
             batchId,
             {
@@ -97,8 +123,37 @@ export class TaskService {
             { new: true }
         );
 
+        // Trigger Notification
+        try {
+            const managerUser = typeof createdBy === 'string' && createdBy.length === 24
+                ? await User.findById(createdBy).select('fullName')
+                : null;
+            const managerName = managerUser?.fullName || (typeof createdBy === 'string' ? createdBy : 'Manager');
+
+            const dueDateStr = task.dueDate
+                ? new Date(task.dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                : 'N/A';
+
+            const formattedMessage = `New Task Assigned\n\nTask:\n${taskName}\n\nBatch:\n${batch.batchName}\n\nAssigned By:\n${managerName}\n\nPriority:\n${task.priority || 'Medium'}\n\nDue:\n${dueDateStr}`;
+
+            await notifService.createNotification({
+                recipient: assignedEmployeeId.toString(),
+                sender: managerName,
+                title: 'New Task Assigned',
+                message: formattedMessage,
+                type: 'TASK_ASSIGNED',
+                batchId: batchId.toString(),
+                taskId: task._id.toString(),
+                batchName: batch.batchName,
+                taskName,
+                priority: task.priority as any,
+            });
+        } catch (err) {
+            console.error('[TaskService] Notification trigger error:', err);
+        }
+
         const populatedTask = await Task.findById(task._id)
-            .populate('assignedEmployee', 'fullName email department designation')
+            .populate('assignedEmployee', 'fullName email department designation employeeType')
             .populate('batchId', 'batchName status');
 
         return {
@@ -108,6 +163,7 @@ export class TaskService {
             batchName: (populatedTask as any)?.batchId?.batchName || batch.batchName,
             taskName,
             operationType: task.operationType,
+            workerType: task.workerType,
             assignedEmployee: assignedEmployeeId,
             assignedEmployeeName: (populatedTask as any)?.assignedEmployee?.fullName || employee.fullName,
             priority: task.priority,
@@ -176,6 +232,36 @@ export class TaskService {
         task.status = status;
         task.verifiedByManager = managerId as any;
         await task.save();
+
+        // Trigger Notification
+        try {
+            const batch = await ProductionBatch.findById(task.batchId);
+            await notifService.createNotification({
+                recipient: task.assignedEmployee.toString(),
+                sender: managerId || 'Manager',
+                title: status === 'Completed' ? 'Task Approved' : 'Task Returned for Rework',
+                message: status === 'Completed'
+                    ? `Your task '${task.taskName}' was verified & approved by manager.`
+                    : `Your task '${task.taskName}' was rejected or returned for rework.`,
+                type: 'TASK_STATUS',
+                batchId: task.batchId?.toString(),
+                taskId: task._id.toString(),
+                batchName: batch?.batchName || 'Production Batch',
+                taskName: task.taskName,
+                priority: task.priority as any,
+            });
+        } catch (err) {
+            console.error('[TaskService] Verify Task Notification Error:', err);
+        }
+
+        return task;
+    }
+
+    async deleteTask(taskId: string) {
+        const task = await Task.findByIdAndDelete(taskId);
+        if (!task) {
+            throw new Error('Task not found');
+        }
         return task;
     }
 }

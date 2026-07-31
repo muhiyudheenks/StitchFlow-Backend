@@ -1,9 +1,82 @@
+import Notification, { INotification, NotificationType } from '../models/notificationModel';
+
+export interface CreateNotificationDTO {
+    recipient: string;
+    sender?: string;
+    title: string;
+    message: string;
+    type: NotificationType;
+    batchId?: string;
+    taskId?: string;
+    batchName?: string;
+    taskName?: string;
+    priority?: 'Low' | 'Medium' | 'High' | 'Urgent';
+}
+
 export class NotificationsService {
-    async getNotifications(userId?: string) {
-        return [
-            { id: 'n1', title: 'New Task Assigned', message: 'Robert Vance assigned task: Stitch Denim Jacket Collar & Cuffs', time: '1 hour ago', unread: true },
-            { id: 'n2', title: 'Shift Attendance Approved', message: 'Your check-in at 08:42 AM was verified by supervisor.', time: '3 hours ago', unread: false },
-            { id: 'n3', title: 'Company Announcement', message: 'Factory Safety Workshop scheduled for Friday 3:00 PM.', time: '1 day ago', unread: false },
-        ];
+    async createNotification(data: CreateNotificationDTO): Promise<INotification> {
+        return await Notification.create({
+            recipient: data.recipient,
+            sender: data.sender || 'System',
+            title: data.title,
+            message: data.message,
+            type: data.type,
+            batchId: data.batchId,
+            taskId: data.taskId,
+            batchName: data.batchName,
+            taskName: data.taskName,
+            priority: data.priority || 'Medium',
+            isRead: false,
+            read: false,
+        });
+    }
+
+    async getNotifications(userId: string) {
+        const notifications = await Notification.find({ recipient: userId })
+            .sort({ isRead: 1, createdAt: -1 })
+            .lean();
+
+        return notifications.map((n: any) => ({
+            id: n._id.toString(),
+            _id: n._id.toString(),
+            recipient: n.recipient?.toString(),
+            sender: n.sender?.toString() || 'System',
+            title: n.title,
+            message: n.message,
+            type: n.type,
+            batchId: n.batchId?.toString(),
+            taskId: n.taskId?.toString(),
+            batchName: n.batchName,
+            taskName: n.taskName,
+            priority: n.priority || 'Medium',
+            isRead: Boolean(n.isRead || n.read),
+            read: Boolean(n.isRead || n.read),
+            createdAt: n.createdAt,
+            updatedAt: n.updatedAt,
+        }));
+    }
+
+    async markAsRead(userId: string, notificationId: string) {
+        const notification = await Notification.findOneAndUpdate(
+            { _id: notificationId, recipient: userId },
+            { isRead: true, read: true },
+            { new: true }
+        );
+        return notification;
+    }
+
+    async markAllAsRead(userId: string) {
+        await Notification.updateMany(
+            { recipient: userId, $or: [{ isRead: false }, { read: false }] },
+            { isRead: true, read: true }
+        );
+        return { success: true, message: 'All notifications marked as read' };
+    }
+
+    async getUnreadCount(userId: string): Promise<number> {
+        return await Notification.countDocuments({
+            recipient: userId,
+            isRead: false,
+        });
     }
 }

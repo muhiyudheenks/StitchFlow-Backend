@@ -1,23 +1,19 @@
-import { Response } from 'express';
+import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../../shared/types/roleTypes';
 import { ProfileService } from '../services/profile.service';
+import { asyncHandler, AppError } from '../../../shared/errors';
 
 const profileService = new ProfileService();
 
-export const getProfile = async (req: AuthRequest, res: Response) => {
-    try {
-        const user = await profileService.getProfile(req.user?.id || '');
-        return res.status(200).json({ success: true, message: 'Profile retrieved', data: user });
-    } catch (err: any) {
-        return res.status(500).json({ success: false, message: err.message || 'Server error' });
+export const getProfile = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const user = await profileService.getProfile(req.user?.id || '');
+    if (!user) {
+        throw AppError.notFound('User profile not found');
     }
-};
+    return res.status(200).json({ success: true, message: 'Profile retrieved', data: user });
+});
 
-export const updateProfile = async (req: AuthRequest, res: Response) => {
-    try {
-        const user = await profileService.updateProfile(req.user?.id || '', req.body);
-        return res.status(200).json({ success: true, message: 'Profile updated', data: user });
-    } catch (err: any) {
-        return res.status(500).json({ success: false, message: err.message || 'Server error' });
-    }
-};
+export const updateProfile = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const user = await profileService.updateProfile(req.user?.id || '', req.body);
+    return res.status(200).json({ success: true, message: 'Profile updated', data: user });
+});

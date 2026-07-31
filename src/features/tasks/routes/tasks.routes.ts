@@ -7,6 +7,7 @@ import {
     updateTaskProgress,
     completeTask,
     verifyTask,
+    deleteTask,
 } from '../controllers/tasks.controller';
 
 const router = Router();
@@ -16,6 +17,7 @@ router.get('/batch/:batchId', getTasksByBatch);
 router.post('/', createTask);
 router.put('/:id', updateTask);
 router.patch('/:id', updateTask);
+router.delete('/:id', deleteTask);
 router.patch('/:id/progress', updateTaskProgress);
 router.patch('/:id/complete', completeTask);
 router.patch('/:id/verify', verifyTask);

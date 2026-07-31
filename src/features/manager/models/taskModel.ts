@@ -5,10 +5,11 @@ export interface ITask extends Document {
     assignedEmployee: mongoose.Types.ObjectId | string;
     taskName: string;
     operationType?: string;
+    workerType?: 'Cutting' | 'Stitching' | 'Finishing';
     priority: 'Low' | 'Medium' | 'High' | 'Urgent';
     targetQuantity: number;
     completedQuantity: number;
-    status: 'Pending' | 'In Progress' | 'Under Review' | 'Completed' | 'Rejected';
+    status: 'Pending' | 'In Progress' | 'Under Review' | 'Completed' | 'Verified' | 'Rejected';
     description?: string;
     dueDate?: Date;
     startedAt?: Date;
@@ -25,6 +26,7 @@ const taskSchema = new Schema<ITask>(
         assignedEmployee: { type: Schema.Types.ObjectId, ref: 'User', required: true },
         taskName: { type: String, required: true, trim: true },
         operationType: { type: String, default: 'Stitching' },
+        workerType: { type: String, enum: ['Cutting', 'Stitching', 'Finishing'], default: 'Stitching' },
         priority: {
             type: String,
             enum: ['Low', 'Medium', 'High', 'Urgent'],
@@ -34,7 +36,7 @@ const taskSchema = new Schema<ITask>(
         completedQuantity: { type: Number, default: 0 },
         status: {
             type: String,
-            enum: ['Pending', 'In Progress', 'Under Review', 'Completed', 'Rejected'],
+            enum: ['Pending', 'In Progress', 'Under Review', 'Completed', 'Verified', 'Rejected'],
             default: 'Pending',
         },
         description: { type: String, trim: true },

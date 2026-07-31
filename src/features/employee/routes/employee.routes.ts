@@ -8,6 +8,7 @@ import {
     toggleAttendance,
     applyLeave,
 } from '../controllers/employee.controller';
+import notificationsRouter from '../../notifications/routes/notifications.routes';
 
 const router = Router();
 
@@ -20,5 +21,8 @@ router.get('/performance', getPerformanceData);
 router.patch('/profile', updateProfile);
 router.post('/attendance/toggle', toggleAttendance);
 router.post('/leaves', applyLeave);
+
+// Mount Notifications sub-router under /api/employee/notifications
+router.use('/notifications', notificationsRouter);
 
 export default router;

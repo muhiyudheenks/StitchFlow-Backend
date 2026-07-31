@@ -3,6 +3,7 @@ import { ActivityRepository } from '../repositories/activity.repository';
 import { CreateEmployeeDto, UpdateEmployeeDto } from '../dto/admin.dto';
 import { PaginationQuery } from '../types/admin.types';
 import { getPaginationOptions, buildPaginationMeta } from '../utils/admin.utils';
+import { AppError } from '../../../shared/errors';
 
 export class EmployeeService {
     private repo = new EmployeeRepository();
@@ -29,7 +30,7 @@ export class EmployeeService {
 
                 return existing.toPublicJSON();
             }
-            throw new Error('Email is already registered');
+            throw AppError.conflict('Email is already registered');
         }
 
         const employee = await this.repo.create(dto);
@@ -42,7 +43,7 @@ export class EmployeeService {
         } catch (emailErr: any) {
             console.error(`[EmployeeService] Rolling back employee creation for ${employee.email} due to email failure`);
             await this.repo.delete(employee._id.toString());
-            throw new Error(`Failed to send invitation email: ${emailErr.message || emailErr}`);
+            throw AppError.internal(`Failed to send invitation email: ${emailErr.message || emailErr}`);
         }
 
         await this.activityRepo.logActivity(
@@ -59,11 +60,11 @@ export class EmployeeService {
     async resendSetupLink(id: string, adminName: string = 'Admin') {
         const employee = await this.repo.findById(id);
         if (!employee) {
-            throw new Error('Employee not found');
+            throw AppError.notFound('Employee not found');
         }
 
         if (employee.isVerified && !employee.setupPasswordToken) {
-            throw new Error('Employee account is already activated and verified');
+            throw AppError.badRequest('Employee account is already activated and verified');
         }
 
         const { resendSetupPasswordToken } = await import('../../../shared/services/invitationService');
@@ -102,12 +103,13 @@ export class EmployeeService {
             ];
         }
 
-        if (query.status && query.status !== 'All') {
-            filter.status = new RegExp(`^${query.status}$`, 'i');
+        if (query.status && query.status.trim() !== '' && query.status.toLowerCase() !== 'all') {
+            const rawStatus = query.status.trim().toLowerCase().replace(' ', '_');
+            filter.status = new RegExp(`^${rawStatus}$`, 'i');
         }
 
-        if (query.department && query.department !== 'All') {
-            filter.department = new RegExp(`^${query.department}$`, 'i');
+        if (query.department && query.department.trim() !== '' && query.department.toLowerCase() !== 'all') {
+            filter.department = new RegExp(`^${query.department.trim()}$`, 'i');
         }
 
         const { employees, total } = await this.repo.findAll(filter, skip, limit);
@@ -147,7 +149,7 @@ export class EmployeeService {
     async getEmployeeById(id: string) {
         const employee = await this.repo.findById(id);
         if (!employee) {
-            throw new Error('Employee not found');
+            throw AppError.notFound('Employee not found');
         }
         return employee.toPublicJSON();
     }
@@ -155,7 +157,7 @@ export class EmployeeService {
     async updateEmployee(id: string, dto: UpdateEmployeeDto, adminName: string = 'Admin') {
         const employee = await this.repo.update(id, dto);
         if (!employee) {
-            throw new Error('Employee not found');
+            throw AppError.notFound('Employee not found');
         }
         await this.activityRepo.logActivity(
             adminName,
@@ -170,7 +172,7 @@ export class EmployeeService {
     async deleteEmployee(id: string, adminName: string = 'Admin') {
         const employee = await this.repo.delete(id);
         if (!employee) {
-            throw new Error('Employee not found');
+            throw AppError.notFound('Employee not found');
         }
         await this.activityRepo.logActivity(
             adminName,
@@ -185,7 +187,7 @@ export class EmployeeService {
     async toggleStatus(id: string, status: 'active' | 'inactive' | 'on_leave', adminName: string = 'Admin') {
         const employee = await this.repo.update(id, { status });
         if (!employee) {
-            throw new Error('Employee not found');
+            throw AppError.notFound('Employee not found');
         }
         await this.activityRepo.logActivity(
             adminName,

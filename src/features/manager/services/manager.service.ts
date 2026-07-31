@@ -19,6 +19,7 @@ const reportsService = new ReportsService();
 export class ManagerService {
     // 1. Dashboard Overview
     async getDashboardOverview(managerId?: string) {
+        const batchFilter = managerId ? { manager: managerId } : {};
         const [
             activeEmployeesCount,
             totalEmployeesCount,
@@ -30,7 +31,7 @@ export class ManagerService {
         ] = await Promise.all([
             User.countDocuments({ role: 'employee', status: 'active' }),
             User.countDocuments({ role: 'employee' }),
-            ProductionBatch.find().sort({ createdAt: -1 }),
+            ProductionBatch.find(batchFilter).sort({ createdAt: -1 }),
             Task.find().sort({ createdAt: -1 }),
             Task.countDocuments({ status: 'Pending' }),
             LeaveRequest.countDocuments({ status: 'pending' }),
@@ -173,16 +174,8 @@ export class ManagerService {
         return await leaveService.updateLeaveStatus(leaveId, status, managerId);
     }
 
-    async getProductionBatches() {
-        return await productionService.getProductionBatches();
-    }
-
-    async createProductionBatch(data: any, createdBy: string) {
-        return await productionService.createProductionBatch(data, createdBy);
-    }
-
-    async updateProductionBatch(id: string, updateData: any) {
-        return await productionService.updateProductionBatch(id, updateData);
+    async getProductionBatches(managerId?: string) {
+        return await productionService.getProductionBatches('manager', managerId);
     }
 
     async getInventoryOverview() {

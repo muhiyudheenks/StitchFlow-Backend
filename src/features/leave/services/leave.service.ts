@@ -1,4 +1,5 @@
 import LeaveRequest from '../models/leaveRequestModel';
+import { NotificationsService } from '../../notifications/services/notifications.service';
 
 export class LeaveService {
     async getMyLeaves(userId: string) {
@@ -113,6 +114,24 @@ export class LeaveService {
 
         if (!updated) {
             throw new Error('Leave request not found');
+        }
+
+        // Trigger Notification
+        try {
+            const notifService = new NotificationsService();
+            const isApproved = status === 'approved';
+            await notifService.createNotification({
+                recipient: updated.employeeId.toString(),
+                sender: reviewerId || 'Manager',
+                title: isApproved ? 'Leave Request Approved' : 'Leave Request Rejected',
+                message: isApproved
+                    ? `Your ${updated.leaveType} leave request from ${new Date(updated.startDate).toISOString().split('T')[0]} to ${new Date(updated.endDate).toISOString().split('T')[0]} was approved.`
+                    : `Your ${updated.leaveType} leave request was rejected by your manager.`,
+                type: 'LEAVE',
+                priority: isApproved ? 'Medium' : 'High',
+            });
+        } catch (err) {
+            console.error('[LeaveService] Notification Error:', err);
         }
 
         return updated;

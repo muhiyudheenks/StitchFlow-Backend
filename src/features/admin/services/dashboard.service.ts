@@ -50,15 +50,13 @@ export class DashboardService {
     }
 
     async getProductionProgress() {
-        const stats = await this.productionRepo.aggregateStats();
-        const todayItems = await this.productionRepo.findTodayProduction();
+        const [stats, todayStats] = await Promise.all([
+            this.productionRepo.aggregateStats(),
+            this.productionRepo.aggregateTodayStats(),
+        ]);
 
-        let todayTarget = 0;
-        let todayCompleted = 0;
-        todayItems.forEach((p) => {
-            todayTarget += p.targetQuantity;
-            todayCompleted += p.completedQuantity;
-        });
+        const todayTarget = todayStats.todayTarget;
+        const todayCompleted = todayStats.todayCompleted;
 
         const totalTarget = stats.length > 0 ? stats[0].totalTarget : 0;
         const totalCompleted = stats.length > 0 ? stats[0].totalCompleted : 0;

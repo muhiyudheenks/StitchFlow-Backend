@@ -100,19 +100,28 @@ export class AttendanceRepository {
 
     async getTodayStats() {
         const { start, end } = this.getStartAndEndOfDay();
-        const records = await Attendance.find({ date: { $gte: start, $lte: end } });
-        let present = 0;
-        let absent = 0;
-        let late = 0;
-        let halfDay = 0;
+        const stats = await Attendance.aggregate([
+            { $match: { date: { $gte: start, $lte: end } } },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: 1 },
+                    present: { $sum: { $cond: [{ $eq: ['$status', 'present'] }, 1, 0] } },
+                    absent: { $sum: { $cond: [{ $eq: ['$status', 'absent'] }, 1, 0] } },
+                    late: { $sum: { $cond: [{ $eq: ['$status', 'late'] }, 1, 0] } },
+                    halfDay: { $sum: { $cond: [{ $eq: ['$status', 'half_day'] }, 1, 0] } },
+                },
+            },
+        ]);
 
-        records.forEach((r) => {
-            if (r.status === 'present') present++;
-            else if (r.status === 'absent') absent++;
-            else if (r.status === 'late') late++;
-            else if (r.status === 'half_day') halfDay++;
-        });
-
-        return { total: records.length, present, absent, late, halfDay };
+        return (
+            stats[0] || {
+                total: 0,
+                present: 0,
+                absent: 0,
+                late: 0,
+                halfDay: 0,
+            }
+        );
     }
 }

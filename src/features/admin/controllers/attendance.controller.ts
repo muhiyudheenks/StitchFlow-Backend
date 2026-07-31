@@ -1,135 +1,82 @@
-import { Response } from 'express';
+import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../../shared/types/roleTypes';
 import { AttendanceService } from '../services/attendance.service';
 import { sendResponse } from '../utils/admin.utils';
 import { HTTP_STATUS, RESPONSE_MESSAGES } from '../constants/admin.constants';
+import { asyncHandler } from '../../../shared/errors';
 
 export class AttendanceController {
     private service = new AttendanceService();
 
-    checkIn = async (req: AuthRequest, res: Response): Promise<Response> => {
-        try {
-            const adminEmail = req.user?.email || 'Admin';
-            const record = await this.service.checkIn(req.body, adminEmail);
-            return sendResponse(
-                res,
-                HTTP_STATUS.CREATED,
-                true,
-                RESPONSE_MESSAGES.ATTENDANCE_CHECKIN_SUCCESS,
-                record
-            );
-        } catch (error: any) {
-            return sendResponse(
-                res,
-                HTTP_STATUS.BAD_REQUEST,
-                false,
-                error.message || 'Check-in failed'
-            );
-        }
-    };
+    checkIn = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response> => {
+        const adminEmail = req.user?.email || 'Admin';
+        const record = await this.service.checkIn(req.body, adminEmail);
+        return sendResponse(
+            res,
+            HTTP_STATUS.CREATED,
+            true,
+            RESPONSE_MESSAGES.ATTENDANCE_CHECKIN_SUCCESS,
+            record
+        );
+    });
 
-    checkOut = async (req: AuthRequest, res: Response): Promise<Response> => {
-        try {
-            const adminEmail = req.user?.email || 'Admin';
-            const record = await this.service.checkOut(req.body, adminEmail);
-            return sendResponse(
-                res,
-                HTTP_STATUS.OK,
-                true,
-                RESPONSE_MESSAGES.ATTENDANCE_CHECKOUT_SUCCESS,
-                record
-            );
-        } catch (error: any) {
-            return sendResponse(
-                res,
-                HTTP_STATUS.BAD_REQUEST,
-                false,
-                error.message || 'Check-out failed'
-            );
-        }
-    };
+    checkOut = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response> => {
+        const adminEmail = req.user?.email || 'Admin';
+        const record = await this.service.checkOut(req.body, adminEmail);
+        return sendResponse(
+            res,
+            HTTP_STATUS.OK,
+            true,
+            RESPONSE_MESSAGES.ATTENDANCE_CHECKOUT_SUCCESS,
+            record
+        );
+    });
 
-    getTodayAttendance = async (req: AuthRequest, res: Response): Promise<Response> => {
-        try {
-            const records = await this.service.getTodayAttendance();
-            return sendResponse(
-                res,
-                HTTP_STATUS.OK,
-                true,
-                "Today's attendance records retrieved successfully",
-                records
-            );
-        } catch (error: any) {
-            return sendResponse(
-                res,
-                HTTP_STATUS.INTERNAL_SERVER_ERROR,
-                false,
-                error.message || "Failed to retrieve today's attendance"
-            );
-        }
-    };
+    getTodayAttendance = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response> => {
+        const records = await this.service.getTodayAttendance();
+        return sendResponse(
+            res,
+            HTTP_STATUS.OK,
+            true,
+            "Today's attendance records retrieved successfully",
+            records
+        );
+    });
 
-    getAttendanceSummary = async (req: AuthRequest, res: Response): Promise<Response> => {
-        try {
-            const summary = await this.service.getAttendanceSummary();
-            return sendResponse(
-                res,
-                HTTP_STATUS.OK,
-                true,
-                'Attendance summary retrieved successfully',
-                summary
-            );
-        } catch (error: any) {
-            return sendResponse(
-                res,
-                HTTP_STATUS.INTERNAL_SERVER_ERROR,
-                false,
-                error.message || 'Failed to retrieve attendance summary'
-            );
-        }
-    };
+    getAttendanceSummary = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response> => {
+        const summary = await this.service.getAttendanceSummary();
+        return sendResponse(
+            res,
+            HTTP_STATUS.OK,
+            true,
+            'Attendance summary retrieved successfully',
+            summary
+        );
+    });
 
-    getEmployeeAttendance = async (req: AuthRequest, res: Response): Promise<Response> => {
-        try {
-            const { employeeId } = req.params;
-            const data = await this.service.getEmployeeAttendance(employeeId, req.query);
-            return sendResponse(
-                res,
-                HTTP_STATUS.OK,
-                true,
-                'Employee attendance history retrieved successfully',
-                data.records,
-                data.pagination
-            );
-        } catch (error: any) {
-            return sendResponse(
-                res,
-                HTTP_STATUS.BAD_REQUEST,
-                false,
-                error.message || 'Failed to retrieve employee attendance'
-            );
-        }
-    };
+    getEmployeeAttendance = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response> => {
+        const { employeeId } = req.params;
+        const data = await this.service.getEmployeeAttendance(employeeId, req.query);
+        return sendResponse(
+            res,
+            HTTP_STATUS.OK,
+            true,
+            'Employee attendance history retrieved successfully',
+            data.records,
+            data.pagination
+        );
+    });
 
-    getMonthlyAttendance = async (req: AuthRequest, res: Response): Promise<Response> => {
-        try {
-            const year = req.query.year ? parseInt(req.query.year as string, 10) : undefined;
-            const month = req.query.month ? parseInt(req.query.month as string, 10) : undefined;
-            const data = await this.service.getMonthlyAttendance(year, month);
-            return sendResponse(
-                res,
-                HTTP_STATUS.OK,
-                true,
-                'Monthly attendance report retrieved successfully',
-                data
-            );
-        } catch (error: any) {
-            return sendResponse(
-                res,
-                HTTP_STATUS.INTERNAL_SERVER_ERROR,
-                false,
-                error.message || 'Failed to retrieve monthly attendance report'
-            );
-        }
-    };
+    getMonthlyAttendance = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response> => {
+        const year = req.query.year ? parseInt(req.query.year as string, 10) : undefined;
+        const month = req.query.month ? parseInt(req.query.month as string, 10) : undefined;
+        const data = await this.service.getMonthlyAttendance(year, month);
+        return sendResponse(
+            res,
+            HTTP_STATUS.OK,
+            true,
+            'Monthly attendance report retrieved successfully',
+            data
+        );
+    });
 }
