@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import ProductionBatch from '../models/productionBatchModel';
 import Task from '../../manager/models/taskModel';
 import User from '../../auth/models/userModel';
@@ -71,9 +72,25 @@ export class ProductionService {
     async getProductionBatches(role?: string, userId?: string) {
         let filter: any = {};
         if (role === 'manager' && userId) {
-            filter = { manager: userId };
+            const userObjectId = mongoose.Types.ObjectId.isValid(userId)
+                ? new mongoose.Types.ObjectId(userId)
+                : userId;
+            filter = {
+                $or: [
+                    { manager: userObjectId },
+                    { manager: userId.toString() },
+                ],
+            };
         } else if (role === 'employee' && userId) {
-            filter = { members: userId };
+            const userObjectId = mongoose.Types.ObjectId.isValid(userId)
+                ? new mongoose.Types.ObjectId(userId)
+                : userId;
+            filter = {
+                $or: [
+                    { members: userObjectId },
+                    { members: userId.toString() },
+                ],
+            };
         }
 
         const batches = await ProductionBatch.find(filter)
@@ -101,17 +118,44 @@ export class ProductionService {
                 }).length;
                 const progressPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
-                const formatWorker = (m: any, defaultDesig: string) => ({
-                    id: m._id?.toString() || m.toString(),
-                    _id: m._id?.toString() || m.toString(),
-                    name: m.fullName || m.name || 'Employee',
-                    fullName: m.fullName || m.name || 'Employee',
-                    email: m.email || '',
-                    employeeId: m._id ? `EMP-${m._id.toString().slice(-4).toUpperCase()}` : 'EMP-0000',
-                    department: m.department || 'Production',
-                    designation: m.designation || defaultDesig,
-                    status: m.status || 'active',
-                });
+                const cuttingIds = new Set(
+                    Array.isArray(b.cuttingWorkers) ? b.cuttingWorkers.map((cw: any) => (cw._id || cw.id || cw).toString()) : []
+                );
+                const finishingIds = new Set(
+                    Array.isArray(b.finishingWorkers) ? b.finishingWorkers.map((fw: any) => (fw._id || fw.id || fw).toString()) : []
+                );
+                const stitchingIds = new Set(
+                    Array.isArray(b.stitchingWorkers) ? b.stitchingWorkers.map((sw: any) => (sw._id || sw.id || sw).toString()) : []
+                );
+
+                const getWorkerCategory = (empId: string, emp: any, defaultCategory: string) => {
+                    if (cuttingIds.has(empId)) return 'Cutting Worker';
+                    if (finishingIds.has(empId)) return 'Finishing Worker';
+                    if (stitchingIds.has(empId)) return 'Stitching Worker';
+                    if (defaultCategory && defaultCategory !== 'Worker') return defaultCategory;
+                    const desig = (emp?.designation || emp?.employeeType || '').toLowerCase();
+                    if (desig.includes('cutting')) return 'Cutting Worker';
+                    if (desig.includes('finishing')) return 'Finishing Worker';
+                    return 'Stitching Worker';
+                };
+
+                const formatWorker = (m: any, defaultDesig: string) => {
+                    const empId = m._id?.toString() || m.toString();
+                    const category = getWorkerCategory(empId, m, defaultDesig);
+                    return {
+                        id: empId,
+                        _id: empId,
+                        name: m.fullName || m.name || 'Employee',
+                        fullName: m.fullName || m.name || 'Employee',
+                        email: m.email || '',
+                        employeeId: m._id ? `EMP-${empId.slice(-4).toUpperCase()}` : 'EMP-0000',
+                        department: m.department || 'Production',
+                        designation: m.designation || defaultDesig,
+                        workerType: category,
+                        workerCategory: category,
+                        status: m.status || 'active',
+                    };
+                };
 
                 const membersList = Array.isArray(b.members) ? b.members.map((m: any) => formatWorker(m, 'Worker')) : [];
                 const cuttingWorkersList = Array.isArray(b.cuttingWorkers) ? b.cuttingWorkers.map((m: any) => formatWorker(m, 'Cutting Worker')) : [];
@@ -330,6 +374,10 @@ export class ProductionService {
             throw new Error('Assigned manager does not exist in user directory');
         }
 
+        const managerObjectId = mongoose.Types.ObjectId.isValid(managerId)
+            ? new mongoose.Types.ObjectId(managerId)
+            : managerId;
+
         const generatedNum = data.batchNumber || data.batchCode || await this.generateNextBatchNumber();
 
         const batch = new ProductionBatch({
@@ -341,7 +389,7 @@ export class ProductionService {
             startDate: data.startDate ? new Date(data.startDate) : new Date(),
             expectedEndDate: data.expectedEndDate || data.dueDate ? new Date(data.expectedEndDate || data.dueDate) : undefined,
             priority: data.priority || 'Medium',
-            manager: managerId,
+            manager: managerObjectId,
             members: [],
             cuttingWorkers: [],
             stitchingWorkers: [],
@@ -359,7 +407,9 @@ export class ProductionService {
     async updateProductionBatch(id: string, updateData: any) {
         const managerId = updateData.managerId || updateData.manager;
         if (managerId) {
-            updateData.manager = managerId;
+            updateData.manager = mongoose.Types.ObjectId.isValid(managerId)
+                ? new mongoose.Types.ObjectId(managerId)
+                : managerId;
         }
 
         const batch = await ProductionBatch.findByIdAndUpdate(id, updateData, { new: true });

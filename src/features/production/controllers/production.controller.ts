@@ -29,8 +29,9 @@ export const getAvailableEmployees = asyncHandler(async (req: AuthRequest, res: 
 });
 
 export const addMemberToBatch = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
-    const { employeeId, employeeIds, workerType } = req.body;
-    const ids = employeeIds || (employeeId ? [employeeId] : []);
+    const { employeeId, employeeIds, employeeInput, workerType } = req.body;
+    const raw = employeeIds || employeeId || employeeInput;
+    const ids = Array.isArray(raw) ? raw : raw ? [raw] : [];
     if (ids.length === 0) {
         throw AppError.badRequest('Employee ID(s) required');
     }

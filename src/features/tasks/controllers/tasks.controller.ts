@@ -51,11 +51,11 @@ export const completeTask = asyncHandler(async (req: AuthRequest, res: Response,
 
 export const verifyTask = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const { status } = req.body;
-    if (!['Completed', 'Rejected'].includes(status)) {
+    if (!['Completed', 'Verified', 'Rejected'].includes(status)) {
         throw AppError.badRequest('Invalid verification status');
     }
     const task = await taskService.verifyTask(req.params.id, status, req.user?.id || '');
-    return res.status(200).json({ success: true, message: `Task verified as ${status}`, data: task });
+    return res.status(200).json({ success: true, message: `Task verified as ${task.status}`, data: task });
 });
 
 export const deleteTask = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {

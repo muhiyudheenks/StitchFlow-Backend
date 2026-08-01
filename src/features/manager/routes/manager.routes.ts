@@ -11,12 +11,26 @@ import {
     getProductionBatches,
     getInventoryOverview,
     getReports,
+    getManagerBatches,
+    getManagerBatchById,
+    getManagerBatchTasks,
+    assignBatchTask,
+    updateBatchTaskStatus,
+    verifyBatchTask,
 } from '../controllers/manager.controller';
 
 const router = Router();
 
 // Dashboard & Overview
 router.get('/overview', getDashboardOverview);
+
+// Manager Assigned Batches
+router.get('/batches', getManagerBatches);
+router.get('/batches/:batchId', getManagerBatchById);
+router.get('/batches/:batchId/tasks', getManagerBatchTasks);
+router.post('/batches/:batchId/tasks', assignBatchTask);
+router.patch('/batches/:batchId/tasks/:taskId', updateBatchTaskStatus);
+router.patch('/batches/:batchId/tasks/:taskId/verify', verifyBatchTask);
 
 // Employee Management
 router.get('/employees', getTeamEmployees);
@@ -42,3 +56,4 @@ router.get('/inventory', getInventoryOverview);
 router.get('/reports', getReports);
 
 export default router;
+

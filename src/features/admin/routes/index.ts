@@ -6,6 +6,7 @@ import inventoryRoutes from './inventory.routes';
 import attendanceRoutes from './attendance.routes';
 import dashboardRoutes from './dashboard.routes';
 import userManagementRoutes from './userManagement.routes';
+import garmentProductRoutes from './garmentProduct.routes';
 
 const router = Router();
 
@@ -15,6 +16,7 @@ router.use('/production', productionRoutes);
 router.use('/inventory', inventoryRoutes);
 router.use('/attendance', attendanceRoutes);
 router.use('/dashboard', dashboardRoutes);
+router.use('/garment-products', garmentProductRoutes);
 router.use('/', userManagementRoutes);
 
 export default router;

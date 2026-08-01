@@ -50,8 +50,8 @@ export const updateLeaveStatus = asyncHandler(async (req: AuthRequest, res: Resp
 });
 
 export const getProductionBatches = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
-    const data = await managerService.getProductionBatches(req.user?.id);
-    return res.status(200).json({ success: true, message: 'Production batches retrieved', data });
+    const data = await managerService.getManagerAssignedBatches(req.user?.id || '');
+    return res.status(200).json({ success: true, message: 'Production batches retrieved', data: data || [] });
 });
 
 export const getInventoryOverview = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -64,3 +64,36 @@ export const getReports = asyncHandler(async (req: AuthRequest, res: Response, n
     const data = await managerService.getReports(type);
     return res.status(200).json({ success: true, message: 'Reports generated', data });
 });
+
+// Manager Assigned Batches Workflow Controllers
+export const getManagerBatches = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const data = await managerService.getManagerAssignedBatches(req.user?.id || '');
+    return res.status(200).json({ success: true, data: data || [] });
+});
+
+export const getManagerBatchById = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const data = await managerService.getManagerBatchById(req.params.batchId, req.user?.id || '');
+    return res.status(200).json({ success: true, data });
+});
+
+export const getManagerBatchTasks = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const data = await managerService.getManagerBatchTasks(req.params.batchId, req.user?.id || '');
+    return res.status(200).json({ success: true, data });
+});
+
+export const assignBatchTask = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const data = await managerService.assignBatchTask(req.params.batchId, req.user?.id || '', req.body);
+    return res.status(201).json({ success: true, message: 'Task assigned successfully', data });
+});
+
+export const updateBatchTaskStatus = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const data = await managerService.updateBatchTaskStatus(req.params.batchId, req.params.taskId, req.user?.id || '', req.body);
+    return res.status(200).json({ success: true, message: 'Task updated successfully', data });
+});
+
+export const verifyBatchTask = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const { status } = req.body;
+    const data = await managerService.verifyBatchTask(req.params.batchId, req.params.taskId, req.user?.id || '', status);
+    return res.status(200).json({ success: true, message: 'Task verified successfully', data });
+});
+

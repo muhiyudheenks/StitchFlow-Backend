@@ -62,7 +62,10 @@ app.use('/api/manager', protect, authorize('manager', 'admin'), managerRouter);
 app.use('/api/employee', protect, authorize('employee', 'manager', 'admin'), employeeRouter);
 app.use('/api/performance', protect, performanceRouter);
 
-// Centralized Domain Feature APIs
+import { getActiveGarmentProducts } from './features/production/controllers/garmentProduct.controller';
+
+app.get('/api/garment-products/active', protect, getActiveGarmentProducts);
+
 app.use('/api/support', protect, supportRouter);
 app.use('/api/tasks', protect, tasksRouter);
 app.use('/api/production', protect, productionRouter);

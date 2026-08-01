@@ -13,6 +13,7 @@ import type {
 } from '../types/authTypes';
 import { loginValidator, resendOtpValidator, verifyOtpValidator } from '../validators/auth-validation';
 import { asyncHandler, AppError } from '../../../shared/errors';
+import { OAuth2Client } from 'google-auth-library';
 
 const OTP_EXPIRES_MINUTES = Number(process.env.OTP_EXPIRES_MINUTES) || 5;
 
@@ -55,6 +56,65 @@ export const login = asyncHandler(async (req: Request<unknown, unknown, LoginReq
         requiresOtp: true,
         email: user.email,
         emailResponse,
+    });
+});
+
+// google login
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+export const googleLogin = asyncHandler(async (req: Request, res: Response) => {
+    const { credential } = req.body;
+
+    if (!credential) {
+        throw AppError.badRequest("Google credential is required.");
+    }
+
+    const ticket = await googleClient.verifyIdToken({
+        idToken: credential,
+        audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+
+    if (!payload?.email) {
+        throw AppError.unauthorized("Invalid Google account.");
+    }
+
+    // Database-ൽ email ഉണ്ടോ?
+    const user = await User.findOne({
+        email: payload.email.toLowerCase(),
+    });
+
+    if (!user) {
+        throw AppError.forbidden(
+            "Your Google account is not authorized. Please contact the administrator."
+        );
+    }
+
+    // Optional security check
+    if (!payload.email_verified) {
+        throw AppError.unauthorized("Google email is not verified.");
+    }
+
+    const token = generateToken(user._id.toString());
+
+    res.cookie("token", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.cookie("jwt", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.status(200).json({
+        message: "Google login successful.",
+        token,
+        user: user.toPublicJSON(),
     });
 });
 
