@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import GarmentProduct from '../models/garmentProductModel';
 import GarmentItem from '../../inventory/models/garment.model';
 import ProductionBatch from '../models/productionBatchModel';
-import Task from '../../manager/models/taskModel';
+import Task from '../../tasks/models/taskModel';
 import { AppError } from '../../../shared/errors';
 
 export class GarmentProductService {

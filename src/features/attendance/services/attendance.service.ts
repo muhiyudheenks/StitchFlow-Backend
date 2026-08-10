@@ -1,5 +1,7 @@
-import AttendanceRecord from '../models/attendanceModel';
+import AttendanceRecord, { IAttendanceRecord, ISession } from '../models/attendanceModel';
 import User from '../../auth/models/userModel';
+import { AppError } from '../../../shared/errors';
+import { settingsService } from '../../settings/services/settings.service';
 
 export class AttendanceService {
     private getTodayDateString(): string {
@@ -14,6 +16,68 @@ export class AttendanceService {
         return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
     }
 
+    private async computeIsLate(now: Date): Promise<boolean> {
+        try {
+            const settings = await settingsService.getSettings();
+            if (settings && settings.shiftStartTime) {
+                const match = settings.shiftStartTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+                if (match) {
+                    let shiftHour = parseInt(match[1], 10);
+                    const shiftMin = parseInt(match[2], 10);
+                    const ampm = match[3].toUpperCase();
+                    if (ampm === 'PM' && shiftHour < 12) shiftHour += 12;
+                    if (ampm === 'AM' && shiftHour === 12) shiftHour = 0;
+                    const thresholdMin = shiftHour * 60 + shiftMin + (settings.lateAfterMinutes ?? 15);
+                    const currentMin = now.getHours() * 60 + now.getMinutes();
+                    return currentMin > thresholdMin;
+                }
+            }
+        } catch (e) {
+            console.error('[AttendanceService] Error loading settings for isLate check:', e);
+        }
+        // Fallback: 09:15 AM
+        return now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 15);
+    }
+
+    private calculateTotalHours(sessions: ISession[]): number {
+        let totalMs = 0;
+        for (const session of sessions) {
+            if (session.checkInTime && session.checkOutTime) {
+                const start = new Date(session.checkInTime).getTime();
+                const end = new Date(session.checkOutTime).getTime();
+                if (end > start) {
+                    totalMs += (end - start);
+                }
+            }
+        }
+        const hours = totalMs / (1000 * 60 * 60);
+        return Math.round(hours * 10) / 10;
+    }
+
+    private formatSessions(sessions: ISession[] = []): Array<{ checkIn: string; checkOut: string | null; checkInTime: Date; checkOutTime: Date | null }> {
+        return sessions.map((s) => ({
+            checkIn: s.checkIn || (s.checkInTime ? this.formatTimeString(new Date(s.checkInTime)) : '—'),
+            checkOut: s.checkOut || (s.checkOutTime ? this.formatTimeString(new Date(s.checkOutTime)) : null),
+            checkInTime: s.checkInTime,
+            checkOutTime: s.checkOutTime || null,
+        }));
+    }
+
+    private migrateLegacySessions(record: IAttendanceRecord): boolean {
+        if ((!record.sessions || record.sessions.length === 0) && record.checkInTime) {
+            record.sessions = [
+                {
+                    checkInTime: record.checkInTime,
+                    checkOutTime: record.checkOutTime || null,
+                    checkIn: record.checkIn || this.formatTimeString(new Date(record.checkInTime)),
+                    checkOut: record.checkOut || (record.checkOutTime ? this.formatTimeString(new Date(record.checkOutTime)) : null),
+                },
+            ];
+            return true;
+        }
+        return false;
+    }
+
     async getTodayAttendance(userId: string) {
         const dateStr = this.getTodayDateString();
         let record = await AttendanceRecord.findOne({ employeeId: userId, date: dateStr });
@@ -21,24 +85,41 @@ export class AttendanceService {
         if (!record) {
             return {
                 isCheckedIn: false,
-                checkIn: '—',
-                checkOut: '—',
+                checkIn: null,
+                checkOut: null,
                 workingHours: '0.0 hrs',
                 totalHours: 0,
                 status: 'absent',
                 attendancePercentage: 96.5,
+                sessions: [],
             };
         }
 
+        const wasMigrated = this.migrateLegacySessions(record);
+        if (wasMigrated) {
+            await record.save();
+        }
+
+        const formattedSessions = this.formatSessions(record.sessions || []);
+        const openSession = formattedSessions.find((s) => !s.checkOutTime);
+        const isCheckedIn = Boolean(openSession);
+
+        const firstSession = formattedSessions.length > 0 ? formattedSessions[0] : null;
+        const closedSessions = formattedSessions.filter((s) => Boolean(s.checkOutTime));
+        const latestClosedSession = closedSessions.length > 0 ? closedSessions[closedSessions.length - 1] : null;
+
+        const totalHours = this.calculateTotalHours(record.sessions || []);
+
         return {
-            isCheckedIn: Boolean(record.checkIn && !record.checkOut),
-            checkIn: record.checkIn || '—',
-            checkOut: record.checkOut || '—',
-            workingHours: `${record.totalHours.toFixed(1)} hrs`,
-            totalHours: record.totalHours,
-            overtimeHours: record.overtimeHours,
+            isCheckedIn,
+            checkIn: firstSession ? firstSession.checkIn : (record.checkIn || null),
+            checkOut: isCheckedIn ? null : (latestClosedSession ? latestClosedSession.checkOut : (record.checkOut || null)),
+            workingHours: `${totalHours.toFixed(1)} hrs`,
+            totalHours,
+            overtimeHours: record.overtimeHours || 0,
             status: record.status,
             attendancePercentage: 96.5,
+            sessions: formattedSessions,
         };
     }
 
@@ -46,25 +127,57 @@ export class AttendanceService {
         const dateStr = this.getTodayDateString();
         const now = new Date();
         const timeStr = this.formatTimeString(now);
+        const isLate = await this.computeIsLate(now);
 
         let record = await AttendanceRecord.findOne({ employeeId: userId, date: dateStr });
-        if (record) {
-            if (record.checkIn) {
-                return record;
-            }
-            record.checkIn = timeStr;
-            record.checkInTime = now;
-        } else {
-            // Determine if late (after 9:00 AM)
-            const isLate = now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 15);
+
+        if (!record) {
             record = new AttendanceRecord({
                 employeeId: userId,
                 date: dateStr,
+                sessions: [
+                    {
+                        checkInTime: now,
+                        checkOutTime: null,
+                        checkIn: timeStr,
+                        checkOut: null,
+                    },
+                ],
                 checkIn: timeStr,
                 checkInTime: now,
+                checkOut: null,
+                checkOutTime: null,
+                totalHours: 0,
+                overtimeHours: 0,
                 status: isLate ? 'late' : 'present',
                 shift: 'Shift A',
+                isApproved: false,
             });
+        } else {
+            this.migrateLegacySessions(record);
+
+            const openSession = record.sessions.find((s) => !s.checkOutTime);
+            if (openSession) {
+                throw AppError.badRequest('You are already checked in');
+            }
+
+            const newSession: ISession = {
+                checkInTime: now,
+                checkOutTime: null,
+                checkIn: timeStr,
+                checkOut: null,
+            };
+
+            record.sessions.push(newSession);
+
+            if (record.sessions.length === 1) {
+                record.status = isLate ? 'late' : 'present';
+                record.checkIn = timeStr;
+                record.checkInTime = now;
+            }
+
+            record.checkOut = null;
+            record.checkOutTime = null;
         }
 
         await record.save();
@@ -77,22 +190,45 @@ export class AttendanceService {
         const timeStr = this.formatTimeString(now);
 
         let record = await AttendanceRecord.findOne({ employeeId: userId, date: dateStr });
-        if (!record || !record.checkInTime) {
-            throw new Error('You must check in before checking out');
+
+        if (!record) {
+            throw AppError.badRequest('You are not currently checked in');
         }
+
+        this.migrateLegacySessions(record);
+
+        const openSessionIndex = record.sessions.findIndex((s) => !s.checkOutTime);
+        if (openSessionIndex === -1) {
+            throw AppError.badRequest('You are not currently checked in');
+        }
+
+        record.sessions[openSessionIndex].checkOutTime = now;
+        record.sessions[openSessionIndex].checkOut = timeStr;
 
         record.checkOut = timeStr;
         record.checkOutTime = now;
 
-        // Calculate hours
-        const diffMs = now.getTime() - new Date(record.checkInTime).getTime();
-        const hours = Math.max(0, diffMs / (1000 * 60 * 60));
-        record.totalHours = Math.round(hours * 10) / 10;
+        const totalHours = this.calculateTotalHours(record.sessions);
+        record.totalHours = totalHours;
 
-        if (record.totalHours < 4) {
+        let halfDayThreshold = 4;
+        let minFullDayHours = 8;
+        try {
+            const settings = await settingsService.getSettings();
+            if (settings) {
+                halfDayThreshold = settings.halfDayThresholdHours ?? 4;
+                minFullDayHours = settings.minFullDayHours ?? 8;
+            }
+        } catch (e) {
+            console.error('[AttendanceService] Error loading settings for checkOut thresholds:', e);
+        }
+
+        if (totalHours < halfDayThreshold) {
             record.status = 'half_day';
-        } else if (record.totalHours > 8) {
-            record.overtimeHours = Math.round((record.totalHours - 8) * 10) / 10;
+        } else if (totalHours > minFullDayHours) {
+            record.overtimeHours = Math.round((totalHours - minFullDayHours) * 10) / 10;
+        } else {
+            record.overtimeHours = 0;
         }
 
         await record.save();
@@ -104,21 +240,30 @@ export class AttendanceService {
             .sort({ date: -1, createdAt: -1 })
             .limit(30);
 
-        return records.map((r: any) => ({
-            id: r._id.toString(),
-            date: r.date,
-            checkIn: r.checkIn || '—',
-            checkOut: r.checkOut || '—',
-            hours: `${r.totalHours.toFixed(1)}h`,
-            totalHours: r.totalHours,
-            status: r.status,
-        }));
+        return records.map((r: any) => {
+            this.migrateLegacySessions(r);
+            const totalHours = this.calculateTotalHours(r.sessions || []);
+            const formattedSessions = this.formatSessions(r.sessions || []);
+            const firstSession = formattedSessions.length > 0 ? formattedSessions[0] : null;
+            const closedSessions = formattedSessions.filter((s) => Boolean(s.checkOutTime));
+            const latestClosed = closedSessions.length > 0 ? closedSessions[closedSessions.length - 1] : null;
+
+            return {
+                id: r._id.toString(),
+                date: r.date,
+                checkIn: firstSession ? firstSession.checkIn : (r.checkIn || null),
+                checkOut: latestClosed ? latestClosed.checkOut : (r.checkOut || null),
+                hours: `${totalHours.toFixed(1)}h`,
+                totalHours,
+                status: r.status,
+                sessions: formattedSessions,
+            };
+        });
     }
 
     async getAllAttendance(role: string, userId: string) {
         let filter: any = {};
         if (role === 'manager') {
-            // Manager view: get employees in manager's department/team
             const teamUsers = await User.find({ role: 'employee' }).select('_id');
             filter.employeeId = { $in: teamUsers.map((u: any) => u._id) };
         }
@@ -127,16 +272,26 @@ export class AttendanceService {
             .populate('employeeId', 'fullName email department designation')
             .sort({ date: -1, createdAt: -1 });
 
-        return records.map((r: any) => ({
-            id: r._id.toString(),
-            employeeName: (r.employeeId as any)?.fullName || 'Employee',
-            employeeEmail: (r.employeeId as any)?.email || '',
-            department: (r.employeeId as any)?.department || 'Production',
-            date: r.date,
-            checkIn: r.checkIn || '—',
-            checkOut: r.checkOut || '—',
-            hours: `${r.totalHours.toFixed(1)}h`,
-            status: r.status,
-        }));
+        return records.map((r: any) => {
+            this.migrateLegacySessions(r);
+            const totalHours = this.calculateTotalHours(r.sessions || []);
+            const formattedSessions = this.formatSessions(r.sessions || []);
+            const firstSession = formattedSessions.length > 0 ? formattedSessions[0] : null;
+            const closedSessions = formattedSessions.filter((s) => Boolean(s.checkOutTime));
+            const latestClosed = closedSessions.length > 0 ? closedSessions[closedSessions.length - 1] : null;
+
+            return {
+                id: r._id.toString(),
+                employeeName: (r.employeeId as any)?.fullName || 'Employee',
+                employeeEmail: (r.employeeId as any)?.email || '',
+                department: (r.employeeId as any)?.department || 'Production',
+                date: r.date,
+                checkIn: firstSession ? firstSession.checkIn : (r.checkIn || null),
+                checkOut: latestClosed ? latestClosed.checkOut : (r.checkOut || null),
+                hours: `${totalHours.toFixed(1)}h`,
+                status: r.status,
+                sessions: formattedSessions,
+            };
+        });
     }
 }

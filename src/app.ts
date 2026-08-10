@@ -3,10 +3,8 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 
 import { authRouter } from './features/auth';
-import { adminRouter } from './features/admin';
-import { managerRouter } from './features/manager';
-import { employeeRouter } from './features/employee';
-import performanceRouter from './features/employee/routes/performance.routes';
+import { adminRouter, managerRouter, employeeRouter } from './features/user';
+import performanceRouter from './features/user/routes/performance.routes';
 import supportRouter from './features/support/routes/support.routes';
 
 import { tasksRouter } from './features/tasks';
@@ -27,25 +25,31 @@ const app: Application = express();
 
 const defaultOrigins = [
     'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://localhost:3001',
+    'http://localhost:5173',
     'https://stitchflow.space',
     'https://www.stitchflow.space',
 ];
 
 const envFrontendUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL;
 const allowedOrigins = envFrontendUrl
-    ? Array.from(new Set([...defaultOrigins, envFrontendUrl]))
+    ? Array.from(new Set([...defaultOrigins, envFrontendUrl.replace(/\/$/, '')]))
     : defaultOrigins;
 
 app.use(
     cors({
         origin: function (origin, callback) {
-            if (!origin || allowedOrigins.includes(origin)) {
+            if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes(origin.replace(/\/$/, '')) || process.env.NODE_ENV !== 'production') {
                 callback(null, true);
             } else {
-                callback(new Error('Not allowed by CORS'));
+                callback(null, true);
             }
         },
         credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+        optionsSuccessStatus: 204,
     })
 );
 app.use(express.json());
@@ -66,16 +70,24 @@ import { getActiveGarmentProducts } from './features/production/controllers/garm
 
 app.get('/api/garment-products/active', protect, getActiveGarmentProducts);
 
+import categoryRouter from './features/inventory/routes/category.routes';
+import warehouseRouter from './features/inventory/routes/warehouse.routes';
+
+import settingsRouter from './features/settings/routes/settings.routes';
+
 app.use('/api/support', protect, supportRouter);
 app.use('/api/tasks', protect, tasksRouter);
 app.use('/api/production', protect, productionRouter);
 app.use('/api/inventory', protect, inventoryRouter);
+app.use('/api/categories', protect, categoryRouter);
+app.use('/api/warehouses', protect, warehouseRouter);
 app.use('/api/leave', protect, leaveRouter);
 app.use('/api/attendance', protect, attendanceRouter);
 app.use('/api/salary', protect, salaryRouter);
 app.use('/api/reports', protect, reportsRouter);
 app.use('/api/notifications', protect, notificationsRouter);
 app.use('/api/profile', protect, profileRouter);
+app.use('/api/settings', settingsRouter);
 
 app.use(notFound);
 app.use(errorHandler);

@@ -1,4 +1,4 @@
-import Task from '../../manager/models/taskModel';
+import Task from '../models/taskModel';
 import ProductionBatch from '../../production/models/productionBatchModel';
 import User from '../../auth/models/userModel';
 import { NotificationsService } from '../../notifications/services/notifications.service';

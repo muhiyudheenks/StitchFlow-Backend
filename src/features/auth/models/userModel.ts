@@ -9,6 +9,7 @@ import {
     EMPLOYEE_TYPE_TO_DESIGNATION,
     EMPLOYEE_TYPE_TO_DEPARTMENT,
 } from '../../../shared/constants/userSchema.constants';
+import { Permission, PERMISSIONS } from '../../../shared/constants/permissions';
 
 export type EmployeeType =
     | 'stitching_worker'
@@ -41,6 +42,7 @@ export interface IUser extends Document {
     email: string;
     password?: string;
     role: "employee" | "manager" | "admin";
+    permissions: Permission[];
     employeeType?: EmployeeType;
     companyName?: string;
     managerId?: mongoose.Types.ObjectId | string;
@@ -81,6 +83,11 @@ const userSchema = new Schema<IUser>(
             type: String,
             enum: ["employee", "admin", "manager"],
             default: "employee",
+        },
+        permissions: {
+            type: [String],
+            enum: Object.values(PERMISSIONS),
+            default: [],
         },
         employeeType: {
             type: String,

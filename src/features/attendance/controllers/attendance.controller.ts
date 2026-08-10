@@ -18,7 +18,11 @@ export const checkIn = asyncHandler(async (req: AuthRequest, res: Response, next
     if (!userId) throw AppError.unauthorized('Unauthorized');
 
     const data = await service.checkIn(userId);
-    return res.status(200).json({ success: true, message: 'Check-in successful', data });
+    return res.status(200).json({
+        success: true,
+        message: 'Check-in successful',
+        data,
+    });
 });
 
 export const checkOut = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -26,7 +30,11 @@ export const checkOut = asyncHandler(async (req: AuthRequest, res: Response, nex
     if (!userId) throw AppError.unauthorized('Unauthorized');
 
     const data = await service.checkOut(userId);
-    return res.status(200).json({ success: true, message: 'Check-out successful', data });
+    return res.status(200).json({
+        success: true,
+        message: 'Check-out successful',
+        data,
+    });
 });
 
 export const getAttendanceHistory = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {

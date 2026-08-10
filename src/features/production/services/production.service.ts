@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import ProductionBatch from '../models/productionBatchModel';
-import Task from '../../manager/models/taskModel';
+import Task from '../../tasks/models/taskModel';
 import User from '../../auth/models/userModel';
 import { NotificationsService } from '../../notifications/services/notifications.service';
 
@@ -108,11 +108,11 @@ export class ProductionService {
                     .sort({ createdAt: -1 });
 
                 const totalTasks = tasks.length;
-                const completedTasks = tasks.filter((t) => {
+                const completedTasks = tasks.filter((t: any) => {
                     const s = (t.status || '').toLowerCase();
                     return s === 'completed' || s === 'verified';
                 }).length;
-                const pendingTasks = tasks.filter((t) => {
+                const pendingTasks = tasks.filter((t: any) => {
                     const s = (t.status || '').toLowerCase();
                     return s === 'pending' || s === 'in_progress' || s === 'under_review' || s === 'under review';
                 }).length;
@@ -316,7 +316,7 @@ export class ProductionService {
 
         // Check all tasks for this batch
         const tasks = await Task.find({ batchId });
-        const uncompletedTasks = tasks.filter((t) => {
+        const uncompletedTasks = tasks.filter((t: any) => {
             const s = (t.status || '').toLowerCase();
             return s !== 'completed' && s !== 'verified';
         });

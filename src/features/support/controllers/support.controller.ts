@@ -43,9 +43,17 @@ export const updateAdminTicket = asyncHandler(async (req: AuthRequest, res: Resp
 
 export const updateTicketStatus = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const { id } = req.params;
-    const { status } = req.body;
-    const ticket = await supportService.updateAdminTicket(id, req.user?.id || '', { status });
+    const { status, resolution, internalNotes } = req.body;
+    const ticket = await supportService.updateAdminTicket(id, req.user?.id || '', { status, resolution, internalNotes });
     return res.status(200).json({ success: true, message: 'Ticket status updated', data: ticket });
+});
+
+export const updateUserTicketStatus = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const { id } = req.params;
+    const { action } = req.body;
+    const ticket = await supportService.updateUserTicketStatus(id, req.user?.id || '', action);
+    const msg = action === 'confirm' ? 'Ticket confirmed as resolved and closed' : 'Ticket reopened for investigation';
+    return res.status(200).json({ success: true, message: msg, data: ticket });
 });
 
 // FAQ Handlers

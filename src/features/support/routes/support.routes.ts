@@ -6,6 +6,7 @@ import {
     getTicketById,
     updateAdminTicket,
     updateTicketStatus,
+    updateUserTicketStatus,
     getFaqs,
     createFaq,
     updateFaq,
@@ -25,6 +26,7 @@ const router = Router();
 // Employee & Manager Ticket Endpoints
 router.post('/tickets', createTicket);
 router.get('/my-tickets', getMyTickets);
+router.patch('/my-tickets/:id/status', updateUserTicketStatus);
 
 // Admin Ticket Command Center Endpoints
 router.get('/tickets', authorize('admin'), getAllTicketsForAdmin);

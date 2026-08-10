@@ -36,6 +36,7 @@ const protect = async (req: AuthRequest, res: Response, next: NextFunction): Pro
             id: user._id.toString(),
             role: user.role as "employee" | "manager" | "admin",
             email: user.email,
+            permissions: user.permissions,
         };
         next();
     } catch (err) {

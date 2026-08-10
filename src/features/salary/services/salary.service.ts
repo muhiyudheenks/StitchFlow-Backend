@@ -1,6 +1,6 @@
 import User from '../../auth/models/userModel';
-import Task from '../../manager/models/taskModel';
-import AttendanceRecord from '../../manager/models/attendanceModel';
+import Task from '../../tasks/models/taskModel';
+import AttendanceRecord from '../../attendance/models/managerAttendance.model';
 import Payroll, { IPayroll } from '../models/payrollModel';
 
 export interface SalaryOverviewData {

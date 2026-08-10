@@ -20,6 +20,14 @@ const connectDB = async (): Promise<void> => {
         } catch (migErr) {
             console.error('Safe employeeType DB migration note:', migErr);
         }
+
+        // Run attendance multi-session migration
+        try {
+            const { migrateAttendanceSessions } = await import('../../database/seeds/migrateAttendanceSessions');
+            await migrateAttendanceSessions();
+        } catch (attMigErr) {
+            console.error('Attendance migration note:', attMigErr);
+        }
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         console.error(`MongoDB connection failed: ${message}`);

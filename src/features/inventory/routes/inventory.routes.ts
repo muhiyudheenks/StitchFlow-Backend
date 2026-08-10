@@ -27,4 +27,12 @@ router.get('/summary', controller.getSummary);
 router.get('/analytics', controller.getAnalytics);
 router.get('/transactions', controller.getTransactions);
 
+// Categories Routes
+import categoryRouter from './category.routes';
+router.use('/categories', categoryRouter);
+
+// Warehouses Routes
+import warehouseRouter from './warehouse.routes';
+router.use('/warehouses', warehouseRouter);
+
 export default router;

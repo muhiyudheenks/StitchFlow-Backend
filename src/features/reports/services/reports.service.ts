@@ -1,6 +1,6 @@
 import ProductionBatch from '../../production/models/productionBatchModel';
-import Task from '../../manager/models/taskModel';
-import AttendanceRecord from '../../manager/models/attendanceModel';
+import Task from '../../tasks/models/taskModel';
+import AttendanceRecord from '../../attendance/models/managerAttendance.model';
 import User from '../../auth/models/userModel';
 
 export class ReportsService {
@@ -58,7 +58,7 @@ export class ReportsService {
             let csv = 'Batch ID,Batch Name,Manager ID,Notes,Status,Total Tasks,Completed Tasks\n';
             batches.forEach((b: any) => {
                 const bTasks = tasks.filter((t) => (t as any).batchName === b.batchName);
-                const done = bTasks.filter((t) => (t.status || '').toLowerCase() === 'completed').length;
+                const done = bTasks.filter((t: any) => (t.status || '').toLowerCase() === 'completed').length;
                 const mgr = b.manager || b.managerId || '';
                 csv += `"${b._id}","${b.batchName}","${mgr}","${(b.notes || '').replace(/"/g, '""')}","${b.status}",${bTasks.length},${done}\n`;
             });
