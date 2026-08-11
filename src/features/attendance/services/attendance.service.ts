@@ -1,4 +1,4 @@
-import AttendanceRecord, { IAttendanceRecord, ISession } from '../models/attendanceModel';
+import AttendanceRecord, { ISession } from '../models/attendanceModel';
 import User from '../../auth/models/userModel';
 import { AppError } from '../../../shared/errors';
 import { settingsService } from '../../settings/services/settings.service';
@@ -63,21 +63,6 @@ export class AttendanceService {
         }));
     }
 
-    private migrateLegacySessions(record: IAttendanceRecord): boolean {
-        if ((!record.sessions || record.sessions.length === 0) && record.checkInTime) {
-            record.sessions = [
-                {
-                    checkInTime: record.checkInTime,
-                    checkOutTime: record.checkOutTime || null,
-                    checkIn: record.checkIn || this.formatTimeString(new Date(record.checkInTime)),
-                    checkOut: record.checkOut || (record.checkOutTime ? this.formatTimeString(new Date(record.checkOutTime)) : null),
-                },
-            ];
-            return true;
-        }
-        return false;
-    }
-
     async getTodayAttendance(userId: string) {
         const dateStr = this.getTodayDateString();
         let record = await AttendanceRecord.findOne({ employeeId: userId, date: dateStr });
@@ -93,11 +78,6 @@ export class AttendanceService {
                 attendancePercentage: 96.5,
                 sessions: [],
             };
-        }
-
-        const wasMigrated = this.migrateLegacySessions(record);
-        if (wasMigrated) {
-            await record.save();
         }
 
         const formattedSessions = this.formatSessions(record.sessions || []);
@@ -154,8 +134,6 @@ export class AttendanceService {
                 isApproved: false,
             });
         } else {
-            this.migrateLegacySessions(record);
-
             const openSession = record.sessions.find((s) => !s.checkOutTime);
             if (openSession) {
                 throw AppError.badRequest('You are already checked in');
@@ -169,13 +147,9 @@ export class AttendanceService {
             };
 
             record.sessions.push(newSession);
-
-            if (record.sessions.length === 1) {
-                record.status = isLate ? 'late' : 'present';
-                record.checkIn = timeStr;
-                record.checkInTime = now;
-            }
-
+            record.status = isLate ? 'late' : 'present';
+            record.checkIn = record.sessions[0]?.checkIn ?? timeStr;
+            record.checkInTime = record.sessions[0]?.checkInTime ?? now;
             record.checkOut = null;
             record.checkOutTime = null;
         }
@@ -194,8 +168,6 @@ export class AttendanceService {
         if (!record) {
             throw AppError.badRequest('You are not currently checked in');
         }
-
-        this.migrateLegacySessions(record);
 
         const openSessionIndex = record.sessions.findIndex((s) => !s.checkOutTime);
         if (openSessionIndex === -1) {
@@ -241,7 +213,6 @@ export class AttendanceService {
             .limit(30);
 
         return records.map((r: any) => {
-            this.migrateLegacySessions(r);
             const totalHours = this.calculateTotalHours(r.sessions || []);
             const formattedSessions = this.formatSessions(r.sessions || []);
             const firstSession = formattedSessions.length > 0 ? formattedSessions[0] : null;
@@ -273,7 +244,6 @@ export class AttendanceService {
             .sort({ date: -1, createdAt: -1 });
 
         return records.map((r: any) => {
-            this.migrateLegacySessions(r);
             const totalHours = this.calculateTotalHours(r.sessions || []);
             const formattedSessions = this.formatSessions(r.sessions || []);
             const firstSession = formattedSessions.length > 0 ? formattedSessions[0] : null;

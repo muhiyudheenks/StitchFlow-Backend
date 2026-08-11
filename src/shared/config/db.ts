@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import AttendanceRecord from '../../features/attendance/models/attendanceModel';
 
 const connectDB = async (): Promise<void> => {
     try {
@@ -28,12 +29,16 @@ const connectDB = async (): Promise<void> => {
             console.error('Safe employeeType/permissions DB migration note:', migErr);
         }
 
-        // Run attendance multi-session migration
-        try {
-            const { migrateAttendanceSessions } = await import('../../database/seeds/migrateAttendanceSessions');
-            await migrateAttendanceSessions();
-        } catch (attMigErr) {
-            console.error('Attendance migration note:', attMigErr);
+        // Start fresh with the sessions-based attendance flow in development mode
+        if (process.env.NODE_ENV !== 'production') {
+            try {
+                const deleted = await AttendanceRecord.deleteMany({});
+                if (deleted.deletedCount > 0) {
+                    console.log(`[Attendance] Cleared ${deleted.deletedCount} legacy attendance records for development.`);
+                }
+            } catch (attResetErr) {
+                console.error('Attendance reset note:', attResetErr);
+            }
         }
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';

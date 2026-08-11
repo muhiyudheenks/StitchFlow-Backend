@@ -1,4 +1,4 @@
-import AttendanceRecord, { IAttendanceRecord } from '../models/attendanceModel';
+import AttendanceRecord, { IAttendanceRecord, ISession } from '../models/attendanceModel';
 import User from '../../auth/models/userModel';
 
 export class AttendanceRepository {
@@ -26,16 +26,41 @@ export class AttendanceRepository {
     ): Promise<IAttendanceRecord> {
         const todayStr = this.getTodayStr(checkInTime);
         const existing = await AttendanceRecord.findOne({ employeeId, date: todayStr });
+        const checkInFormatted = this.formatTimeStr(checkInTime);
 
         if (existing) {
-            throw new Error('Employee has already checked in today');
-        }
+            const openSession = (existing.sessions || []).find((session: ISession) => !session.checkOutTime);
+            if (openSession) {
+                throw new Error('Employee has already checked in today');
+            }
 
-        const checkInFormatted = this.formatTimeStr(checkInTime);
+            existing.sessions = [
+                ...(existing.sessions || []),
+                {
+                    checkInTime,
+                    checkOutTime: null,
+                    checkIn: checkInFormatted,
+                    checkOut: null,
+                },
+            ];
+            existing.checkIn = existing.sessions[0]?.checkIn ?? checkInFormatted;
+            existing.checkInTime = existing.sessions[0]?.checkInTime ?? checkInTime;
+            existing.checkOut = null;
+            existing.checkOutTime = null;
+            existing.status = status;
+            const saved = await existing.save();
+            return await AttendanceRecord.findById(saved._id).populate('employeeId', 'fullName email department designation') as IAttendanceRecord;
+        }
 
         const record = new AttendanceRecord({
             employeeId,
             date: todayStr,
+            sessions: [{
+                checkInTime,
+                checkOutTime: null,
+                checkIn: checkInFormatted,
+                checkOut: null,
+            }],
             checkIn: checkInFormatted,
             checkInTime,
             checkOut: null,
@@ -70,20 +95,39 @@ export class AttendanceRepository {
         }
 
         const checkOutFormatted = this.formatTimeStr(checkOutTime);
+        const openSession = (record.sessions || []).find((session: ISession) => !session.checkOutTime);
+
+        if (!openSession) {
+            return null;
+        }
+
+        openSession.checkOutTime = checkOutTime;
+        openSession.checkOut = checkOutFormatted;
         record.checkOutTime = checkOutTime;
         record.checkOut = checkOutFormatted;
 
-        if (record.checkInTime) {
-            const diffMs = checkOutTime.getTime() - new Date(record.checkInTime).getTime();
-            const totalHours = Math.max(0, Math.round((diffMs / (1000 * 60 * 60)) * 10) / 10);
-            record.totalHours = totalHours;
-            record.overtimeHours = Math.max(0, Math.round((totalHours - 8) * 10) / 10);
-        }
+        const totalHours = this.calculateTotalHours(record.sessions || []);
+        record.totalHours = totalHours;
+        record.overtimeHours = Math.max(0, Math.round((totalHours - 8) * 10) / 10);
 
         if (notes) (record as any).notes = notes;
 
         await record.save();
         return await AttendanceRecord.findById(record._id).populate('employeeId', 'fullName email department designation');
+    }
+
+    private calculateTotalHours(sessions: ISession[]): number {
+        let totalMs = 0;
+        for (const session of sessions) {
+            if (session.checkInTime && session.checkOutTime) {
+                const start = new Date(session.checkInTime).getTime();
+                const end = new Date(session.checkOutTime).getTime();
+                if (end > start) {
+                    totalMs += (end - start);
+                }
+            }
+        }
+        return Math.max(0, Math.round((totalMs / (1000 * 60 * 60)) * 10) / 10);
     }
 
     async findTodayAttendance(): Promise<IAttendanceRecord[]> {
@@ -93,7 +137,8 @@ export class AttendanceRepository {
         return await AttendanceRecord.find({
             $or: [
                 { date: todayStr },
-                { checkInTime: { $gte: start, $lte: end } },
+                { 'sessions.checkInTime': { $gte: start, $lte: end } },
+                { 'sessions.checkOutTime': { $gte: start, $lte: end } },
                 { createdAt: { $gte: start, $lte: end } },
             ],
         })
@@ -143,7 +188,8 @@ export class AttendanceRepository {
         const records = await AttendanceRecord.find({
             $or: [
                 { date: todayStr },
-                { checkInTime: { $gte: start, $lte: end } },
+                { 'sessions.checkInTime': { $gte: start, $lte: end } },
+                { 'sessions.checkOutTime': { $gte: start, $lte: end } },
                 { createdAt: { $gte: start, $lte: end } },
             ],
         });
