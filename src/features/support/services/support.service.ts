@@ -165,6 +165,93 @@ export class SupportService {
     }
 
     // 5. Admin: Update Ticket (Status, Assignment, Resolution, Internal Notes)
+    // async updateAdminTicket(ticketId: string, adminId: string, updates: {
+    //     status?: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+    //     assignedAdmin?: string;
+    //     resolution?: string;
+    //     internalNotes?: string;
+    // }) {
+    //     if (!ticketId || !mongoose.Types.ObjectId.isValid(ticketId)) {
+    //         throw AppError.notFound('Invalid ticket ID format');
+    //     }
+
+    //     const ticket = await SupportTicket.findById(ticketId);
+    //     if (!ticket) {
+    //         throw AppError.notFound('Support ticket not found');
+    //     }
+
+    //     if (updates.status === 'CLOSED') {
+    //         throw AppError.forbidden('Only the ticket creator can confirm resolution and mark the ticket as CLOSED.');
+    //     }
+
+    //     if (updates.resolution !== undefined) {
+    //         ticket.resolution = updates.resolution.trim();
+    //     }
+    //     if (updates.internalNotes !== undefined) {
+    //         ticket.internalNotes = updates.internalNotes.trim();
+    //     }
+    //     if (updates.assignedAdmin !== undefined) {
+    //         if (updates.assignedAdmin && mongoose.Types.ObjectId.isValid(updates.assignedAdmin)) {
+    //             ticket.assignedAdmin = updates.assignedAdmin;
+    //         } else {
+    //             ticket.assignedAdmin = undefined;
+    //         }
+    //     }
+
+    //     const prevStatus = ticket.status;
+
+    //     if (updates.status) {
+    //         if (updates.status === 'RESOLVED') {
+    //             const effectiveResolution = updates.resolution !== undefined ? updates.resolution.trim() : (ticket.resolution || '');
+    //             if (!effectiveResolution) {
+    //                 throw AppError.badRequest('Resolution response is required when resolving a support ticket.');
+    //             }
+    //             ticket.resolution = effectiveResolution;
+    //             ticket.resolvedAt = new Date();
+    //         } else if (updates.status === 'IN_PROGRESS') {
+    //             // Resolution response not required for IN_PROGRESS
+    //         }
+    //         ticket.status = updates.status;
+    //     }
+
+    //     await ticket.save();
+
+    //     // Notify Ticket Creator if status changed or resolution added (soft failure)
+    //     if (updates.status && updates.status !== prevStatus) {
+    //         try {
+    //             let notifTitle = `Support Ticket #${ticket._id.toString().slice(-6).toUpperCase()} Updated`;
+    //             let notifMsg = `Admin updated your ticket status to ${ticket.status}.`;
+
+    //             if (ticket.status === 'IN_PROGRESS') {
+    //                 notifTitle = `Support Ticket #${ticket._id.toString().slice(-6).toUpperCase()} In Progress`;
+    //                 notifMsg = `Admin has started investigating your support ticket.`;
+    //             } else if (ticket.status === 'RESOLVED') {
+    //                 notifTitle = `Support Ticket #${ticket._id.toString().slice(-6).toUpperCase()} RESOLVED`;
+    //                 notifMsg = `Admin marked your support ticket as RESOLVED. Resolution: "${ticket.resolution}". Please review and confirm if solved.`;
+    //             }
+
+    //             const recipientId = (ticket.createdBy as any)?._id || ticket.createdBy;
+    //             const senderId = (adminId && mongoose.Types.ObjectId.isValid(adminId)) ? adminId : undefined;
+
+    //             if (recipientId) {
+    //                 await Notification.create({
+    //                     recipient: recipientId,
+    //                     sender: senderId,
+    //                     title: notifTitle,
+    //                     message: notifMsg,
+    //                     type: 'TICKET',
+    //                     referenceId: ticket._id.toString(),
+    //                 });
+    //             }
+    //         } catch (notifErr) {
+    //             console.error('[SupportService] Failed to send ticket update notification:', notifErr);
+    //         }
+    //     }
+
+    //     return ticket;
+    // }
+
+    // 5. Admin: Update Ticket (Status, Assignment, Resolution, Internal Notes)
     async updateAdminTicket(ticketId: string, adminId: string, updates: {
         status?: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
         assignedAdmin?: string;
@@ -184,53 +271,58 @@ export class SupportService {
             throw AppError.forbidden('Only the ticket creator can confirm resolution and mark the ticket as CLOSED.');
         }
 
-        if (updates.resolution !== undefined) {
-            ticket.resolution = updates.resolution.trim();
-        }
-        if (updates.internalNotes !== undefined) {
-            ticket.internalNotes = updates.internalNotes.trim();
-        }
-        if (updates.assignedAdmin !== undefined) {
-            if (updates.assignedAdmin && mongoose.Types.ObjectId.isValid(updates.assignedAdmin)) {
-                ticket.assignedAdmin = updates.assignedAdmin;
-            } else {
-                ticket.assignedAdmin = undefined;
-            }
-        }
-
         const prevStatus = ticket.status;
 
+        const setFields: any = {};
+        if (updates.resolution !== undefined) {
+            setFields.resolution = updates.resolution.trim();
+        }
+        if (updates.internalNotes !== undefined) {
+            setFields.internalNotes = updates.internalNotes.trim();
+        }
+        if (updates.assignedAdmin !== undefined) {
+            setFields.assignedAdmin =
+                updates.assignedAdmin && mongoose.Types.ObjectId.isValid(updates.assignedAdmin)
+                    ? updates.assignedAdmin
+                    : null;
+        }
         if (updates.status) {
             if (updates.status === 'RESOLVED') {
-                const effectiveResolution = updates.resolution !== undefined ? updates.resolution.trim() : (ticket.resolution || '');
+                const effectiveResolution =
+                    updates.resolution !== undefined ? updates.resolution.trim() : (ticket.resolution || '');
                 if (!effectiveResolution) {
                     throw AppError.badRequest('Resolution response is required when resolving a support ticket.');
                 }
-                ticket.resolution = effectiveResolution;
-                ticket.resolvedAt = new Date();
-            } else if (updates.status === 'IN_PROGRESS') {
-                // Resolution response not required for IN_PROGRESS
+                setFields.resolution = effectiveResolution;
+                setFields.resolvedAt = new Date();
             }
-            ticket.status = updates.status;
+            setFields.status = updates.status;
         }
 
-        await ticket.save();
+        const updatedTicket = await SupportTicket.findByIdAndUpdate(
+            ticketId,
+            { $set: setFields },
+            { new: true, runValidators: false }
+        );
 
-        // Notify Ticket Creator if status changed or resolution added (soft failure)
+        if (!updatedTicket) {
+            throw AppError.notFound('Support ticket not found after update');
+        }
+
         if (updates.status && updates.status !== prevStatus) {
             try {
-                let notifTitle = `Support Ticket #${ticket._id.toString().slice(-6).toUpperCase()} Updated`;
-                let notifMsg = `Admin updated your ticket status to ${ticket.status}.`;
+                let notifTitle = `Support Ticket #${updatedTicket._id.toString().slice(-6).toUpperCase()} Updated`;
+                let notifMsg = `Admin updated your ticket status to ${updatedTicket.status}.`;
 
-                if (ticket.status === 'IN_PROGRESS') {
-                    notifTitle = `Support Ticket #${ticket._id.toString().slice(-6).toUpperCase()} In Progress`;
+                if (updatedTicket.status === 'IN_PROGRESS') {
+                    notifTitle = `Support Ticket #${updatedTicket._id.toString().slice(-6).toUpperCase()} In Progress`;
                     notifMsg = `Admin has started investigating your support ticket.`;
-                } else if (ticket.status === 'RESOLVED') {
-                    notifTitle = `Support Ticket #${ticket._id.toString().slice(-6).toUpperCase()} RESOLVED`;
-                    notifMsg = `Admin marked your support ticket as RESOLVED. Resolution: "${ticket.resolution}". Please review and confirm if solved.`;
+                } else if (updatedTicket.status === 'RESOLVED') {
+                    notifTitle = `Support Ticket #${updatedTicket._id.toString().slice(-6).toUpperCase()} RESOLVED`;
+                    notifMsg = `Admin marked your support ticket as RESOLVED. Resolution: "${updatedTicket.resolution}". Please review and confirm if solved.`;
                 }
 
-                const recipientId = (ticket.createdBy as any)?._id || ticket.createdBy;
+                const recipientId = (updatedTicket.createdBy as any)?._id || updatedTicket.createdBy;
                 const senderId = (adminId && mongoose.Types.ObjectId.isValid(adminId)) ? adminId : undefined;
 
                 if (recipientId) {
@@ -240,7 +332,7 @@ export class SupportService {
                         title: notifTitle,
                         message: notifMsg,
                         type: 'TICKET',
-                        referenceId: ticket._id.toString(),
+                        referenceId: updatedTicket._id.toString(),
                     });
                 }
             } catch (notifErr) {
@@ -248,9 +340,8 @@ export class SupportService {
             }
         }
 
-        return ticket;
+        return updatedTicket;
     }
-
     // 6. Employee/Manager: Confirm Resolved or Reopen Ticket
     async updateUserTicketStatus(ticketId: string, userId: string, action: 'confirm' | 'reopen') {
         if (!ticketId || !mongoose.Types.ObjectId.isValid(ticketId)) {

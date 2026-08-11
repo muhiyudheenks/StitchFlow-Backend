@@ -36,8 +36,14 @@ const protect = async (req: AuthRequest, res: Response, next: NextFunction): Pro
             id: user._id.toString(),
             role: user.role as "employee" | "manager" | "admin",
             email: user.email,
-            permissions: user.permissions,
+            permissions: Array.from(user.permissions ?? []) as any,
         };
+        console.log('[authMiddleware Debug]', {
+            userId: user._id.toString(),
+            role: user.role,
+            permissionsFromDB: Array.from(user.permissions ?? []),
+            permissionsCount: user.permissions?.length,
+        });
         next();
     } catch (err) {
         return res.status(401).json({ message: 'Not authorized. Invalid or expired token.' });

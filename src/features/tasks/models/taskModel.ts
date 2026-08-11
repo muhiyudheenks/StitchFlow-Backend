@@ -15,6 +15,7 @@ export interface ITask extends Document {
     startedAt?: Date;
     completedAt?: Date;
     verifiedByManager?: mongoose.Types.ObjectId | string;
+    addedToInventory?: boolean;
     createdBy?: mongoose.Types.ObjectId | string;
     createdAt: Date;
     updatedAt: Date;
@@ -44,6 +45,7 @@ const taskSchema = new Schema<ITask>(
         startedAt: { type: Date },
         completedAt: { type: Date },
         verifiedByManager: { type: Schema.Types.ObjectId, ref: 'User' },
+        addedToInventory: { type: Boolean, default: false },
         createdBy: { type: Schema.Types.Mixed, default: 'Manager' },
     },
     { timestamps: true }

@@ -17,8 +17,15 @@ const connectDB = async (): Promise<void> => {
                 { role: 'employee', $or: [{ employeeType: { $exists: false } }, { employeeType: null }] },
                 { $set: { employeeType: 'stitching_worker' } }
             );
+
+            // Grant all permissions to all admin users dynamically
+            const { PERMISSIONS } = await import('../../shared/constants/permissions');
+            await User.updateMany(
+                { role: 'admin' },
+                { $set: { permissions: Object.values(PERMISSIONS) } }
+            );
         } catch (migErr) {
-            console.error('Safe employeeType DB migration note:', migErr);
+            console.error('Safe employeeType/permissions DB migration note:', migErr);
         }
 
         // Run attendance multi-session migration

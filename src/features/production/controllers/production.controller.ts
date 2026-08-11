@@ -73,3 +73,9 @@ export const deleteTask = asyncHandler(async (req: AuthRequest, res: Response, n
     const task = await taskService.deleteTask(req.params.id);
     return res.status(200).json({ success: true, message: 'Task deleted successfully', data: task });
 });
+
+export const addTaskToInventory = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const managerId = req.user?.id || 'Admin';
+    const garment = await taskService.addTaskToInventory(req.params.id, managerId);
+    return res.status(200).json({ success: true, message: 'Task added to inventory successfully', data: garment });
+});

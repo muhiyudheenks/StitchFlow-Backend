@@ -12,7 +12,22 @@ export const requirePermission = (permission: Permission) => {
             });
         }
 
-        if (!req.user.permissions?.includes(permission)) {
+        const permissionsArray = Array.isArray(req.user.permissions)
+            ? req.user.permissions
+            : Array.from(req.user.permissions ?? []);
+
+        const hasPermission = permissionsArray.includes(permission as any);
+
+        console.log('[requirePermission Debug]', {
+            userId: req.user?.id,
+            role: req.user?.role,
+            requiredPermission: permission,
+            permissionsCount: permissionsArray.length,
+            permissionsArray,
+            hasPermission,
+        });
+
+        if (!hasPermission) {
             return res.status(403).json({
                 message: "Permission denied",
             });

@@ -41,6 +41,7 @@ export class TaskService {
             description: t.description || '',
             dueDate: t.dueDate ? new Date(t.dueDate).toISOString().split('T')[0] : 'N/A',
             verifiedByManager: t.verifiedByManager?.fullName || null,
+            addedToInventory: t.addedToInventory || false,
             createdAt: t.createdAt,
             updatedAt: t.updatedAt,
         }));
@@ -308,25 +309,40 @@ export class TaskService {
         return task;
     }
 
-    async updateTaskProgress(taskId: string, completedQuantity: number, status?: string) {
+    async updateTaskProgress(taskId: string, completedQuantity: number) {
         const task = await Task.findById(taskId);
         if (!task) {
             throw new Error('Task not found');
         }
 
-        task.completedQuantity = Number(completedQuantity);
+        const cq = Number(completedQuantity);
+
+        // Backend validation: reject out-of-bounds quantities
+        if (isNaN(cq) || cq < 0) {
+            throw new Error('Completed quantity must be a non-negative number');
+        }
+        if (cq > task.targetQuantity) {
+            throw new Error(`Completed quantity (${cq}) cannot exceed assigned quantity (${task.targetQuantity})`);
+        }
+
+        task.completedQuantity = cq;
+
+        // Set startedAt timestamp on first progress update
         if (!task.startedAt) {
             task.startedAt = new Date();
         }
 
-        if (status) {
-            task.status = status as any;
-        } else if (task.completedQuantity >= task.targetQuantity) {
+        // Status is derived purely from quantity — client cannot override this
+        // completedQuantity === targetQuantity → Under Review (employee finished, manager must verify)
+        // completedQuantity > 0               → In Progress
+        // completedQuantity === 0             → stay In Progress if already started, otherwise Pending
+        if (cq >= task.targetQuantity) {
             task.status = 'Under Review';
             task.completedAt = new Date();
-        } else if (task.completedQuantity > 0) {
+        } else if (cq > 0 || task.startedAt) {
             task.status = 'In Progress';
         }
+        // else: leave status as Pending (hasn't been started, qty=0)
 
         await task.save();
         return task;
@@ -338,10 +354,17 @@ export class TaskService {
             throw new Error('Task not found');
         }
 
+        // Enforce: employee can only submit for review when ALL assigned quantity is completed
+        if (task.completedQuantity < task.targetQuantity) {
+            // Return the task with current status (in_progress) and an informative message
+            // The controller will send back a 200 with incomplete=true so the frontend can show the right message
+            return { task, incomplete: true, remaining: task.targetQuantity - task.completedQuantity };
+        }
+
         task.status = 'Under Review';
         task.completedAt = new Date();
         await task.save();
-        return task;
+        return { task, incomplete: false, remaining: 0 };
     }
 
     async verifyTask(taskId: string, status: 'Verified' | 'Completed' | 'Rejected', managerId: string) {
@@ -350,23 +373,40 @@ export class TaskService {
             throw new Error('Task not found');
         }
 
-        const targetStatus = status === 'Rejected' ? 'Rejected' : 'Verified';
-        task.status = targetStatus;
-        if (managerId) {
-            task.verifiedByManager = managerId as any;
+        if (status === 'Verified' || status === 'Completed') {
+            // Manager can only approve a task that is 100% complete
+            if (task.completedQuantity < task.targetQuantity) {
+                throw new Error(
+                    `Cannot approve task: only ${task.completedQuantity} of ${task.targetQuantity} pieces completed. Task must be 100% complete before approval.`
+                );
+            }
+            if (task.status !== 'Under Review') {
+                throw new Error('Task must be in "Under Review" status before it can be approved');
+            }
         }
-        await task.save();
+
+        if (status === 'Rejected') {
+            // Rejected → move back to In Progress so employee can continue rework
+            task.status = 'In Progress';
+            if (managerId) task.verifiedByManager = managerId as any;
+            await task.save();
+        } else {
+            task.status = 'Verified';
+            if (managerId) task.verifiedByManager = managerId as any;
+            await task.save();
+        }
 
         // Trigger Notification
         try {
             const batch = await ProductionBatch.findById(task.batchId);
+            const isApproved = status !== 'Rejected';
             await notifService.createNotification({
                 recipient: task.assignedEmployee.toString(),
                 sender: managerId || 'Manager',
-                title: targetStatus === 'Verified' ? 'Task Approved' : 'Task Returned for Rework',
-                message: targetStatus === 'Verified'
+                title: isApproved ? 'Task Approved' : 'Task Returned for Rework',
+                message: isApproved
                     ? `Your task '${task.taskName}' was verified & approved by manager.`
-                    : `Your task '${task.taskName}' was rejected or returned for rework.`,
+                    : `Your task '${task.taskName}' was returned for rework. Please complete remaining pieces and resubmit.`,
                 type: 'TASK_STATUS',
                 batchId: task.batchId?.toString(),
                 taskId: task._id.toString(),
@@ -382,10 +422,59 @@ export class TaskService {
     }
 
     async deleteTask(taskId: string) {
-        const task = await Task.findByIdAndDelete(taskId);
+        const task = await Task.findById(taskId);
         if (!task) {
             throw new Error('Task not found');
         }
+        if (task.status === 'Completed' || task.status === 'Verified') {
+            throw new Error('Cannot delete a completed or verified task');
+        }
+        await Task.findByIdAndDelete(taskId);
         return task;
+    }
+
+    async addTaskToInventory(taskId: string, managerId: string) {
+        const task = await Task.findById(taskId).populate('batchId');
+        if (!task) {
+            throw new Error('Task not found');
+        }
+        if (task.status !== 'Completed' && task.status !== 'Verified') {
+            throw new Error('Only completed and verified tasks can be added to inventory');
+        }
+        if (task.completedQuantity !== task.targetQuantity) {
+            throw new Error('Task must be 100% complete before adding to inventory');
+        }
+        if (task.addedToInventory) {
+            throw new Error('This production task has already been added to inventory.');
+        }
+
+        const batch = task.batchId as any;
+        const productName = batch?.productName || task.taskName || 'Garment';
+        const styleNumber = batch?.batchCode || batch?.batchNumber || task._id.toString().substring(0, 8).toUpperCase();
+
+        const GarmentItem = (await import('../../inventory/models/garment.model')).default;
+        
+        // Use a transaction if possible, or just atomic updates
+        const garment = new GarmentItem({
+            productId: `PROD-${Date.now()}-${task._id.toString().substring(0, 6)}`,
+            productName: productName,
+            styleNumber: styleNumber,
+            category: 'Production Output',
+            size: 'Mixed',
+            color: 'Mixed',
+            quantityAvailable: task.completedQuantity,
+            quantityReserved: 0,
+            warehouse: 'Main Warehouse', // Default warehouse
+            unitCost: 0,
+            sellingPrice: 0,
+            status: 'Ready'
+        });
+
+        await garment.save();
+
+        task.addedToInventory = true;
+        await task.save();
+
+        return garment;
     }
 }

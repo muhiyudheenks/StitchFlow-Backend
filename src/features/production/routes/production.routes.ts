@@ -10,7 +10,11 @@ import {
     updateProductionBatch,
     deleteProductionBatch,
     deleteTask,
+    addTaskToInventory,
 } from '../controllers/production.controller';
+
+import { requirePermission } from '../../../shared/middleware/requirePermission';
+import { PERMISSIONS } from '../../../shared/constants/permissions';
 
 const router = Router();
 
@@ -18,6 +22,7 @@ const router = Router();
 router.get('/', getProductionBatches);
 router.get('/available-employees', getAvailableEmployees);
 router.delete('/tasks/:id', deleteTask);
+router.post('/tasks/:id/inventory', requirePermission(PERMISSIONS.INVENTORY_CREATE), addTaskToInventory);
 router.get('/:id', getProductionBatchById);
 router.post('/:id/members', addMemberToBatch);
 router.delete('/:id/members/:employeeId', removeMemberFromBatch);
