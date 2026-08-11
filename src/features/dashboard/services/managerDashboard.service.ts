@@ -33,7 +33,7 @@ export class ManagerDashboardService {
         ] = await Promise.all([
             User.countDocuments({ role: 'employee', status: 'active' }),
             User.countDocuments({ role: 'employee' }),
-            ProductionBatch.find(batchFilter).sort({ createdAt: -1 }),
+            ProductionBatch.find(batchFilter).populate('manager', 'fullName email designation department').sort({ createdAt: -1 }),
             Task.find().sort({ createdAt: -1 }),
             Task.countDocuments({ status: 'Pending' }),
             LeaveRequest.countDocuments({ status: 'pending' }),
@@ -51,17 +51,34 @@ export class ManagerDashboardService {
 
         const productionBatches = batches.map((b) => {
             const batchTasks = tasks.filter((t) => (t as any).batchId?.toString() === b._id.toString() || (t as any).batchName === b.batchName);
-            const doneTasks = batchTasks.filter((t) => (t.status || '').toLowerCase() === 'completed').length;
-            const totTasks = batchTasks.length || 1;
-            const eff = Math.min(100, Math.round((doneTasks / totTasks) * 100)) || 75;
+            const doneTasks = batchTasks.filter((t) => {
+                const s = (t.status || '').toLowerCase();
+                return s === 'completed' || s === 'verified';
+            }).length;
+            const totTasks = batchTasks.length;
+
+            const completedPcs = batchTasks.reduce((sum, t) => sum + ((t as any).completedQuantity || 0), 0);
+            const taskTargetPcs = batchTasks.reduce((sum, t) => sum + ((t as any).targetQuantity || 0), 0);
+            const targetPcs = taskTargetPcs > 0 ? taskTargetPcs : (b.quantity || 100);
+            const pct = targetPcs > 0 ? Math.round((completedPcs / targetPcs) * 100) : 0;
+            const eff = Math.min(100, pct) || (totTasks > 0 ? Math.min(100, Math.round((doneTasks / totTasks) * 100)) : 75);
+
+            const managerObj = b.manager && typeof b.manager === 'object' ? b.manager : null;
+            const managerName = (managerObj as any)?.fullName || 'Production Leader';
 
             return {
                 id: b._id.toString(),
                 name: b.batchName,
                 completedTasks: doneTasks,
-                totalTasks: batchTasks.length,
+                totalTasks: totTasks,
+                completedPcs,
+                targetPcs,
+                completedQuantity: completedPcs,
+                targetQuantity: targetPcs,
                 efficiency: eff,
                 status: b.status,
+                leader: managerName,
+                managerName,
             };
         });
 
@@ -98,6 +115,7 @@ export class ManagerDashboardService {
                 inventoryAlerts: inventoryAlertsCount,
             },
             productionBatches,
+            productionLines: productionBatches,
             recentActivity,
         };
     }
