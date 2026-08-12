@@ -3,8 +3,15 @@ import ProductionBatch from '../models/productionBatchModel';
 import Task from '../../tasks/models/taskModel';
 import User from '../../auth/models/userModel';
 import { NotificationsService } from '../../notifications/services/notifications.service';
+import { ProductionRepository } from '../repositories/production.repository';
+import { ActivityRepository } from '../../dashboard/repositories/activity.repository';
+import { CreateProductionDto, UpdateProductionDto } from '../../user/dto/admin.dto';
+import { PaginationQuery } from '../../user/types/admin.types';
+import { getPaginationOptions, buildPaginationMeta } from '../../user/utils/admin.utils';
 
 export class ProductionService {
+    private repo = new ProductionRepository();
+    private activityRepo = new ActivityRepository();
     async generateNextBatchNumber(): Promise<string> {
         const count = await ProductionBatch.countDocuments();
         const candidate = `BATCH-${(count + 1).toString().padStart(4, '0')}`;
@@ -427,5 +434,115 @@ export class ProductionService {
         }
         await Task.deleteMany({ batchId: id });
         return batch;
+    }
+
+    async createProduction(dto: CreateProductionDto, adminName: string = 'Admin') {
+        const production = await this.repo.create(dto);
+        await this.activityRepo.logActivity(
+            adminName,
+            'admin',
+            `Created production task '${production.title}'`,
+            'Production',
+            `Target: ${production.targetQuantity}`
+        );
+        return production;
+    }
+
+    async getProductions(query: PaginationQuery) {
+        const { page, limit, skip } = getPaginationOptions(query);
+        const filter: any = {};
+
+        if (query.search) {
+            filter.title = { $regex: query.search, $options: 'i' };
+        }
+
+        if (query.status) {
+            filter.status = query.status;
+        }
+
+        const { productions, total } = await this.repo.findAll(filter, skip, limit);
+        const pagination = buildPaginationMeta(total, page, limit);
+
+        return {
+            productions,
+            pagination,
+        };
+    }
+
+    async getProductionById(id: string) {
+        const production = await this.repo.findById(id);
+        if (!production) {
+            throw new Error('Production task not found');
+        }
+        return production;
+    }
+
+    async updateProduction(id: string, dto: UpdateProductionDto, adminName: string = 'Admin') {
+        const production = await this.repo.update(id, dto);
+        if (!production) {
+            throw new Error('Production task not found');
+        }
+
+        if (production.completedQuantity >= production.targetQuantity && production.status !== 'completed') {
+            production.status = 'completed';
+            await production.save();
+        }
+
+        await this.activityRepo.logActivity(
+            adminName,
+            'admin',
+            `Updated production task '${production.title}'`,
+            'Production'
+        );
+        return production;
+    }
+
+    async deleteProduction(id: string, adminName: string = 'Admin') {
+        const production = await this.repo.delete(id);
+        if (!production) {
+            throw new Error('Production task not found');
+        }
+        await this.activityRepo.logActivity(
+            adminName,
+            'admin',
+            `Deleted production task '${production.title}'`,
+            'Production'
+        );
+        return { id };
+    }
+
+    async getTodayProduction() {
+        return await this.repo.findTodayProduction();
+    }
+
+    async getTarget() {
+        const stats = await this.repo.aggregateStats();
+        const totalTarget = stats.length > 0 ? stats[0].totalTarget : 0;
+        return { totalTarget };
+    }
+
+    async getCompleted() {
+        const stats = await this.repo.aggregateStats();
+        const totalCompleted = stats.length > 0 ? stats[0].totalCompleted : 0;
+        return { totalCompleted };
+    }
+
+    async getRemaining() {
+        const stats = await this.repo.aggregateStats();
+        const totalTarget = stats.length > 0 ? stats[0].totalTarget : 0;
+        const totalCompleted = stats.length > 0 ? stats[0].totalCompleted : 0;
+        return { totalRemaining: Math.max(0, totalTarget - totalCompleted) };
+    }
+
+    async getEfficiency() {
+        const stats = await this.repo.aggregateStats();
+        const totalTarget = stats.length > 0 ? stats[0].totalTarget : 0;
+        const totalCompleted = stats.length > 0 ? stats[0].totalCompleted : 0;
+        const efficiency = totalTarget > 0 ? Math.min(100, Math.round((totalCompleted / totalTarget) * 100)) : 0;
+        return {
+            totalTarget,
+            totalCompleted,
+            efficiencyPercentage: efficiency,
+        };
     }
 }

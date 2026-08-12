@@ -44,8 +44,8 @@ export class LeaveService {
             const label = typeStr.includes('sick')
                 ? 'Sick Leave'
                 : typeStr.includes('annual')
-                ? 'Annual Leave'
-                : 'Casual Leave';
+                    ? 'Annual Leave'
+                    : 'Casual Leave';
 
             return {
                 id: r._id.toString(),
@@ -63,8 +63,10 @@ export class LeaveService {
         };
     }
 
-    async getLeaveRequests() {
-        const requests = await LeaveRequest.find()
+    async getLeaveRequests(employeeIds?: string[]) {
+        const query = employeeIds && employeeIds.length > 0 ? { employeeId: { $in: employeeIds } } : {};
+
+        const requests = await LeaveRequest.find(query)
             .populate('employeeId', 'fullName email department')
             .sort({ createdAt: -1 });
 

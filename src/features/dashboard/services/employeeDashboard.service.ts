@@ -1,14 +1,15 @@
 import User from '../../auth/models/userModel';
-import AttendanceRecord from '../../attendance/models/attendanceModel';
 import ProductionBatch from '../../production/models/productionBatchModel';
 import Task from '../../tasks/models/taskModel';
 import { ProfileService } from '../../profile/services/profile.service';
 import { LeaveService } from '../../leave/services/leave.service';
 import { SalaryService } from '../../salary/services/salary.service';
+import AttendanceService from '../../attendance/services/attendance.service';
 
 const profileService = new ProfileService();
 const leaveService = new LeaveService();
 const salaryService = new SalaryService();
+const attendanceService = new AttendanceService();
 
 export class EmployeeDashboardService {
     async getDashboardData(userId?: string) {
@@ -68,7 +69,7 @@ export class EmployeeDashboardService {
             }));
         }
 
-        // Fetch My Recent Attendance
+        // Fetch My Recent Attendance (via AttendanceService)
         let todayStatus = 'not_checked_in';
         let checkInTime = '--:--';
         let checkOutTime = '--:--';
@@ -76,22 +77,12 @@ export class EmployeeDashboardService {
         let monthHoursWorked = 0;
 
         if (userId) {
-            const todayStr = new Date().toISOString().split('T')[0];
-            const todayRec = await AttendanceRecord.findOne({ userId, date: todayStr });
-            if (todayRec) {
-                todayStatus = todayRec.status || 'present';
-                checkInTime = todayRec.checkIn || '--:--';
-                checkOutTime = todayRec.checkOut || '--:--';
-            }
-
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const prefix = `${year}-${month}`;
-            const monthRecords = await AttendanceRecord.find({ userId, date: new RegExp(`^${prefix}`) });
-
-            monthPresentDays = monthRecords.filter((r) => r.status === 'present' || r.status === 'late').length;
-            monthHoursWorked = monthRecords.reduce((acc, r) => acc + ((r as any).workHours || 8), 0);
+            const att = await attendanceService.getEmployeeDashboardSummary(userId);
+            todayStatus = att.todayStatus || 'not_checked_in';
+            checkInTime = att.checkInTime || '--:--';
+            checkOutTime = att.checkOutTime || '--:--';
+            monthPresentDays = att.monthPresentDays || 0;
+            monthHoursWorked = att.monthHoursWorked || 0;
         }
 
         let profileData = null;
@@ -170,8 +161,7 @@ export class EmployeeDashboardService {
 
     async getMyAttendance(userId?: string) {
         if (!userId) return [];
-        const todayStr = new Date().toISOString().split('T')[0];
-        return await AttendanceRecord.find({ userId }).sort({ createdAt: -1 }).limit(30);
+        return await attendanceService.getAttendanceHistory(userId);
     }
 
     async getSalarySummary(userId?: string) {

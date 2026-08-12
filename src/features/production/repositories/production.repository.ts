@@ -1,4 +1,4 @@
-import Production, { IProduction } from '../models/adminProduction.model';
+import Production, { IProduction } from '../models/production.model';
 import { CreateProductionDto, UpdateProductionDto } from '../../user/dto/admin.dto';
 
 export class ProductionRepository {

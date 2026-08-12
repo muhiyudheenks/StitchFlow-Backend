@@ -34,12 +34,12 @@ export const updateTask = asyncHandler(async (req: AuthRequest, res: Response, n
 });
 
 export const getAttendanceRecords = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
-    const data = await managerService.getAttendanceRecords();
+    const data = await managerService.getAttendanceRecords(req.user?.id);
     return res.status(200).json({ success: true, message: 'Attendance records retrieved', data });
 });
 
 export const getLeaveRequests = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
-    const data = await managerService.getLeaveRequests();
+    const data = await managerService.getLeaveRequests(req.user?.id);
     return res.status(200).json({ success: true, message: 'Leave requests retrieved', data });
 });
 

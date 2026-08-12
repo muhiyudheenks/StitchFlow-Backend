@@ -3,6 +3,8 @@ import { AuthRequest } from '../../../shared/types/roleTypes';
 import { ProductionService } from '../services/production.service';
 import { TaskService } from '../../tasks/services/tasks.service';
 import { asyncHandler, AppError } from '../../../shared/errors';
+import { sendResponse } from '../../user/utils/admin.utils';
+import { HTTP_STATUS, RESPONSE_MESSAGES } from '../../user/constants/admin.constants';
 
 const service = new ProductionService();
 const taskService = new TaskService();
@@ -67,6 +69,101 @@ export const updateProductionBatch = asyncHandler(async (req: AuthRequest, res: 
 export const deleteProductionBatch = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const batch = await service.deleteProductionBatch(req.params.id);
     return res.status(200).json({ success: true, message: 'Production batch deleted successfully', data: batch });
+});
+
+export const createProduction = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const adminEmail = req.user?.email || 'Admin';
+    const production = await service.createProduction(req.body, adminEmail);
+    return sendResponse(
+        res,
+        HTTP_STATUS.CREATED,
+        true,
+        RESPONSE_MESSAGES.PRODUCTION_CREATED,
+        production
+    );
+});
+
+export const getProductions = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const result = await service.getProductions(req.query);
+    return sendResponse(
+        res,
+        HTTP_STATUS.OK,
+        true,
+        'Production entries retrieved successfully',
+        result.productions,
+        result.pagination
+    );
+});
+
+export const getProductionById = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const { id } = req.params;
+    const production = await service.getProductionById(id);
+    if (!production) {
+        throw AppError.notFound(RESPONSE_MESSAGES.PRODUCTION_NOT_FOUND);
+    }
+    return sendResponse(
+        res,
+        HTTP_STATUS.OK,
+        true,
+        'Production details retrieved successfully',
+        production
+    );
+});
+
+export const updateProduction = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const { id } = req.params;
+    const adminEmail = req.user?.email || 'Admin';
+    const updated = await service.updateProduction(id, req.body, adminEmail);
+    return sendResponse(
+        res,
+        HTTP_STATUS.OK,
+        true,
+        RESPONSE_MESSAGES.PRODUCTION_UPDATED,
+        updated
+    );
+});
+
+export const deleteProduction = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const { id } = req.params;
+    const adminEmail = req.user?.email || 'Admin';
+    await service.deleteProduction(id, adminEmail);
+    return sendResponse(
+        res,
+        HTTP_STATUS.OK,
+        true,
+        RESPONSE_MESSAGES.PRODUCTION_DELETED
+    );
+});
+
+export const getTodayProduction = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const today = await service.getTodayProduction();
+    return sendResponse(
+        res,
+        HTTP_STATUS.OK,
+        true,
+        "Today's production entries retrieved successfully",
+        today
+    );
+});
+
+export const getTarget = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const data = await service.getTarget();
+    return sendResponse(res, HTTP_STATUS.OK, true, 'Target quantity retrieved successfully', data);
+});
+
+export const getCompleted = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const data = await service.getCompleted();
+    return sendResponse(res, HTTP_STATUS.OK, true, 'Completed quantity retrieved successfully', data);
+});
+
+export const getRemaining = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const data = await service.getRemaining();
+    return sendResponse(res, HTTP_STATUS.OK, true, 'Remaining quantity retrieved successfully', data);
+});
+
+export const getEfficiency = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const data = await service.getEfficiency();
+    return sendResponse(res, HTTP_STATUS.OK, true, 'Production efficiency retrieved successfully', data);
 });
 
 export const deleteTask = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {

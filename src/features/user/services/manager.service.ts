@@ -75,8 +75,27 @@ export class ManagerService {
         return await taskService.updateTask(taskId, updateData);
     }
 
-    async getAttendanceRecords() {
-        const records = await AttendanceRecord.find()
+    async getAttendanceRecords(managerId?: string) {
+        if (!managerId) {
+            throw AppError.unauthorized('User not authenticated');
+        }
+
+        const managerObjectId = mongoose.Types.ObjectId.isValid(managerId)
+            ? new mongoose.Types.ObjectId(managerId)
+            : managerId;
+
+        const teamEmployees = await User.find({
+            role: 'employee',
+            managerId: { $in: [managerObjectId, managerId] },
+        }).select('_id');
+
+        if (teamEmployees.length === 0) {
+            return [];
+        }
+
+        const employeeIds = teamEmployees.map((u) => u._id);
+
+        const records = await AttendanceRecord.find({ employeeId: { $in: employeeIds } })
             .populate('employeeId', 'fullName email department')
             .sort({ date: -1, createdAt: -1 });
 
@@ -92,8 +111,27 @@ export class ManagerService {
         }));
     }
 
-    async getLeaveRequests() {
-        return await leaveService.getLeaveRequests();
+    async getLeaveRequests(managerId?: string) {
+        if (!managerId) {
+            throw AppError.unauthorized('User not authenticated');
+        }
+
+        const managerObjectId = mongoose.Types.ObjectId.isValid(managerId)
+            ? new mongoose.Types.ObjectId(managerId)
+            : managerId;
+
+        const teamEmployees = await User.find({
+            role: 'employee',
+            managerId: { $in: [managerObjectId, managerId] },
+        }).select('_id');
+
+        const employeeIds = teamEmployees.map((u) => u._id.toString());
+
+        if (employeeIds.length === 0) {
+            return [];
+        }
+
+        return await leaveService.getLeaveRequests(employeeIds);
     }
 
     async updateLeaveStatus(leaveId: string, status: 'approved' | 'rejected', managerId: string) {
@@ -174,31 +212,31 @@ export class ManagerService {
 
             const membersList = Array.isArray(b.members)
                 ? b.members.map((m: any) => ({
-                      id: m._id?.toString() || m.toString(),
-                      _id: m._id?.toString() || m.toString(),
-                      fullName: m.fullName || 'Employee',
-                      email: m.email || '',
-                      department: m.department || 'Production',
-                      designation: m.designation || 'Worker',
-                      employeeType: m.employeeType || 'stitching_worker',
-                      status: m.status || 'active',
-                  }))
+                    id: m._id?.toString() || m.toString(),
+                    _id: m._id?.toString() || m.toString(),
+                    fullName: m.fullName || 'Employee',
+                    email: m.email || '',
+                    department: m.department || 'Production',
+                    designation: m.designation || 'Worker',
+                    employeeType: m.employeeType || 'stitching_worker',
+                    status: m.status || 'active',
+                }))
                 : [];
 
             const managerObj = b.manager && typeof b.manager === 'object'
                 ? {
-                      id: b.manager._id?.toString(),
-                      _id: b.manager._id?.toString(),
-                      fullName: b.manager.fullName || 'Manager',
-                      email: b.manager.email || '',
-                      designation: b.manager.designation || 'Production Manager',
-                      department: b.manager.department || 'Production',
-                  }
+                    id: b.manager._id?.toString(),
+                    _id: b.manager._id?.toString(),
+                    fullName: b.manager.fullName || 'Manager',
+                    email: b.manager.email || '',
+                    designation: b.manager.designation || 'Production Manager',
+                    department: b.manager.department || 'Production',
+                }
                 : {
-                      id: managerId,
-                      _id: managerId,
-                      fullName: 'Self',
-                  };
+                    id: managerId,
+                    _id: managerId,
+                    fullName: 'Self',
+                };
 
             const garmentName = b.productName || b.garmentName || 'Garment';
             const dueDate = b.expectedEndDate || b.dueDate || b.startDate || null;
@@ -270,15 +308,15 @@ export class ManagerService {
 
         const membersList = Array.isArray(batch.members)
             ? batch.members.map((m: any) => ({
-                  id: m._id?.toString() || m.toString(),
-                  _id: m._id?.toString() || m.toString(),
-                  fullName: m.fullName || 'Employee',
-                  email: m.email || '',
-                  department: m.department || 'Production',
-                  designation: m.designation || 'Worker',
-                  employeeType: m.employeeType || 'stitching_worker',
-                  status: m.status || 'active',
-              }))
+                id: m._id?.toString() || m.toString(),
+                _id: m._id?.toString() || m.toString(),
+                fullName: m.fullName || 'Employee',
+                email: m.email || '',
+                department: m.department || 'Production',
+                designation: m.designation || 'Worker',
+                employeeType: m.employeeType || 'stitching_worker',
+                status: m.status || 'active',
+            }))
             : [];
 
         const garmentName = batch.productName || (batch as any).garmentName || 'Garment';
