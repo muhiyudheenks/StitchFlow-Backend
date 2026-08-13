@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { AuthRequest } from '../types/roleTypes';
 import User from '../../features/auth/models/userModel';
+import { PERMISSIONS } from '../constants/permissions';
 
 interface JwtPayload {
     id: string;
@@ -32,17 +33,24 @@ const protect = async (req: AuthRequest, res: Response, next: NextFunction): Pro
             return res.status(401).json({ message: 'Not authorized. User no longer exists.' });
         }
 
+        const dbPermissions = Array.from(user.permissions ?? []);
+        const fallbackManagerPermissions =
+            user.role === 'manager' && dbPermissions.length === 0
+                ? [PERMISSIONS.ATTENDANCE_VIEW, PERMISSIONS.ATTENDANCE_MANAGE]
+                : [];
+
         req.user = {
             id: user._id.toString(),
             role: user.role as "employee" | "manager" | "admin",
             email: user.email,
-            permissions: Array.from(user.permissions ?? []) as any,
+            permissions: (dbPermissions.length > 0 ? dbPermissions : fallbackManagerPermissions) as any,
         };
         console.log('[authMiddleware Debug]', {
             userId: user._id.toString(),
             role: user.role,
-            permissionsFromDB: Array.from(user.permissions ?? []),
-            permissionsCount: user.permissions?.length,
+            permissionsFromDB: dbPermissions,
+            permissionsCount: dbPermissions.length,
+            effectivePermissions: req.user.permissions,
         });
         next();
     } catch (err) {

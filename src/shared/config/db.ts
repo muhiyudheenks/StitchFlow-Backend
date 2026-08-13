@@ -29,17 +29,8 @@ const connectDB = async (): Promise<void> => {
             console.error('Safe employeeType/permissions DB migration note:', migErr);
         }
 
-        // Start fresh with the sessions-based attendance flow in development mode
-        if (process.env.NODE_ENV !== 'production') {
-            try {
-                const deleted = await AttendanceRecord.deleteMany({});
-                if (deleted.deletedCount > 0) {
-                    console.log(`[Attendance] Cleared ${deleted.deletedCount} legacy attendance records for development.`);
-                }
-            } catch (attResetErr) {
-                console.error('Attendance reset note:', attResetErr);
-            }
-        }
+        // Preserve attendance records on startup. Legacy cleanup is disabled to avoid removing test data.
+        // If needed, remove this block and use a targeted migration script instead.
     } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         console.error(`MongoDB connection failed: ${message}`);

@@ -95,7 +95,10 @@ export class ManagerService {
 
         const employeeIds = teamEmployees.map((u) => u._id);
 
-        const records = await AttendanceRecord.find({ employeeId: { $in: employeeIds } })
+        const records = await AttendanceRecord.find({
+            employeeId: { $in: employeeIds },
+            isApproved: { $in: [true, false] },
+        })
             .populate('employeeId', 'fullName email department')
             .sort({ date: -1, createdAt: -1 });
 
