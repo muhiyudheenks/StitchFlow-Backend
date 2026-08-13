@@ -453,7 +453,7 @@ export class TaskService {
         const styleNumber = batch?.batchCode || batch?.batchNumber || task._id.toString().substring(0, 8).toUpperCase();
 
         const GarmentItem = (await import('../../inventory/models/garment.model')).default;
-        
+
         // Use a transaction if possible, or just atomic updates
         const garment = new GarmentItem({
             productId: `PROD-${Date.now()}-${task._id.toString().substring(0, 6)}`,
@@ -474,6 +474,41 @@ export class TaskService {
 
         task.addedToInventory = true;
         await task.save();
+
+        // After adding this task's output to inventory, check if all tasks in the batch
+        // have been added to inventory. If so, mark the batch as Completed.
+        try {
+            const batchId = task.batchId?.toString();
+            if (batchId) {
+                const batchTasks = await Task.find({ batchId });
+                const remaining = batchTasks.filter((t: any) => !t.addedToInventory).length;
+                if (remaining === 0) {
+                    await ProductionBatch.findByIdAndUpdate(batchId, { status: 'Completed' });
+
+                    // Notify members about batch completion
+                    try {
+                        const members = (await ProductionBatch.findById(batchId).select('members'))?.members || [];
+                        for (const memberId of members) {
+                            if (!memberId) continue;
+                            await notifService.createNotification({
+                                recipient: memberId.toString(),
+                                sender: (batch as any)?.manager?.toString() || (managerId || 'System'),
+                                title: 'Production Batch Completed',
+                                message: `Production batch '${(task.batchId as any)?.batchName || batchId}' has been automatically marked as Completed after inventory addition.`,
+                                type: 'BATCH_EVENT',
+                                batchId: batchId.toString(),
+                                batchName: (task.batchId as any)?.batchName || 'Production Batch',
+                                priority: 'High',
+                            });
+                        }
+                    } catch (notifErr) {
+                        console.error('[TaskService] Batch Completion Notification Error:', notifErr);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('[TaskService] Post-inventory batch completion check failed:', err);
+        }
 
         return garment;
     }

@@ -25,9 +25,6 @@ const app: Application = express();
 
 const defaultOrigins = [
     'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://localhost:3001',
-    'http://localhost:5173',
     'https://stitchflow.space',
     'https://www.stitchflow.space',
 ];
@@ -43,7 +40,7 @@ app.use(
             if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes(origin.replace(/\/$/, '')) || process.env.NODE_ENV !== 'production') {
                 callback(null, true);
             } else {
-                callback(null, true);
+                callback(new Error('Not allowed by CORS'));
             }
         },
         credentials: true,
@@ -52,6 +49,7 @@ app.use(
         optionsSuccessStatus: 204,
     })
 );
+
 app.use(express.json());
 app.use(cookieParser());
 

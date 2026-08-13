@@ -1,5 +1,6 @@
 import AttendanceRecord, { ISession } from '../models/attendanceModel';
 import User from '../../auth/models/userModel';
+import mongoose from 'mongoose';
 import { AppError } from '../../../shared/errors';
 import { settingsService } from '../../settings/services/settings.service';
 import { getPaginationOptions, buildPaginationMeta } from '../../user/utils/admin.utils';
@@ -333,12 +334,24 @@ export class AttendanceService {
     async getAllAttendance(role: string, userId: string) {
         let filter: any = {};
         if (role === 'manager') {
-            const teamUsers = await User.find({ role: 'employee' }).select('_id');
-            filter.employeeId = { $in: teamUsers.map((u: any) => u._id) };
+            // convert manager id to ObjectId explicitly
+            const managerObjectId = new mongoose.Types.ObjectId(userId);
+
+            // find employees assigned to this manager
+            const teamUsers = await User.find({ role: 'employee', managerId: managerObjectId }).select('_id');
+            const employeeIds = teamUsers.map((u: any) => new mongoose.Types.ObjectId(u._id));
+
+            // fetch attendance for employees in manager's team OR records that have managerId matching the manager
+            filter = {
+                $or: [
+                    { employeeId: { $in: employeeIds } },
+                    { managerId: managerObjectId },
+                ],
+            };
         }
 
         const records = await AttendanceRecord.find(filter)
-            .populate('employeeId', 'fullName email department designation')
+            .populate('employeeId', 'name email department role')
             .sort({ date: -1, createdAt: -1 });
 
         return records.map((r: any) => {

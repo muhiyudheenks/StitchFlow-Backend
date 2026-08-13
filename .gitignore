@@ -3,6 +3,7 @@ node_modules/
 
 # environment
 .env
+.env.example
 
 # build output
 dist/
