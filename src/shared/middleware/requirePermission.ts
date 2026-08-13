@@ -27,6 +27,16 @@ export const requirePermission = (permission: Permission) => {
             hasPermission,
         });
 
+        // Allow admins by default
+        if (req.user?.role === 'admin') {
+            return next();
+        }
+
+        // Allow managers to perform production assignment actions even if DB permissions are empty
+        if (req.user?.role === 'manager' && permission === PERMISSIONS.PRODUCTION_ASSIGN) {
+            return next();
+        }
+
         if (!hasPermission) {
             return res.status(403).json({
                 message: "Permission denied",
