@@ -31,14 +31,29 @@ export class ManagerService {
     // 2. Employee Roster
     async getTeamEmployees(managerId?: string, search?: string, department?: string) {
         const query: any = { role: 'employee' };
-        if (search) {
-            query.$or = [
-                { fullName: { $regex: search, $options: 'i' } },
-                { email: { $regex: search, $options: 'i' } },
+
+        // filter by manager relationship when managerId is provided
+        if (managerId) {
+            query.$and = [
+                { $or: [{ manager: managerId }, { managerId: managerId }] },
             ];
         }
+
+        if (search) {
+            const searchClause = {
+                $or: [
+                    { fullName: { $regex: search, $options: 'i' } },
+                    { email: { $regex: search, $options: 'i' } },
+                ]
+            };
+            if (query.$and) query.$and.push(searchClause);
+            else query.$and = [searchClause];
+        }
+
         if (department && department !== 'all') {
-            query.department = department;
+            const deptClause = { department };
+            if (query.$and) query.$and.push(deptClause);
+            else query.$and = [deptClause];
         }
 
         const employees = await User.find(query).sort({ createdAt: -1 });

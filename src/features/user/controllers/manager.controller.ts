@@ -11,10 +11,15 @@ export const getDashboardOverview = asyncHandler(async (req: AuthRequest, res: R
 });
 
 export const getTeamEmployees = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
-    const search = req.query.search as string;
-    const department = req.query.department as string;
-    const data = await managerService.getTeamEmployees(req.user?.id, search, department);
-    return res.status(200).json({ success: true, message: 'Employees retrieved', data });
+    try {
+        const search = req.query.search as string;
+        const department = req.query.department as string;
+        const data = await managerService.getTeamEmployees(req.user?.id, search, department);
+        return res.status(200).json({ success: true, message: 'Employees retrieved', data });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ success: false, message: 'Internal server error' });
+    }
 });
 
 export const getTasks = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -34,8 +39,13 @@ export const updateTask = asyncHandler(async (req: AuthRequest, res: Response, n
 });
 
 export const getAttendanceRecords = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
-    const data = await managerService.getAttendanceRecords(req.user?.id);
-    return res.status(200).json({ success: true, message: 'Attendance records retrieved', data });
+    try {
+        const data = await managerService.getAttendanceRecords(req.user?.id);
+        return res.status(200).json({ success: true, message: 'Attendance records retrieved', data });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ success: false, message: 'Internal server error' });
+    }
 });
 
 export const getLeaveRequests = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
