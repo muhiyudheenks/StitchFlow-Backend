@@ -1,6 +1,4 @@
 import mongoose from 'mongoose';
-import AttendanceRecord from '../../features/attendance/models/attendanceModel';
-
 const connectDB = async (): Promise<void> => {
     try {
         const uri = process.env.MONGO_URI as string;
