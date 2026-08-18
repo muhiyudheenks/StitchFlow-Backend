@@ -2,20 +2,20 @@ import express, { Application } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 
-import { authRouter } from './features/auth';
-import { adminRouter, managerRouter, employeeRouter } from './features/user';
-import performanceRouter from './features/user/routes/performance.routes';
-import supportRouter from './features/support/routes/support.routes';
+import { authRouter } from './modules/auth';
+import { adminRouter, managerRouter, employeeRouter } from './modules/user';
+import performanceRouter from './modules/user/routes/performance.routes';
+import supportRouter from './modules/support/routes/support.routes';
 
-import { tasksRouter } from './features/tasks';
-import { productionRouter } from './features/production';
-import { inventoryRouter } from './features/inventory';
-import { leaveRouter } from './features/leave';
-import attendanceRouter from './features/attendance/routes/attendance.routes';
-import { salaryRouter } from './features/salary';
-import { reportsRouter } from './features/reports';
-import { notificationsRouter } from './features/notifications';
-import { profileRouter } from './features/profile';
+import { tasksRouter } from './modules/tasks';
+import { productionRouter } from './modules/production';
+import { inventoryRouter } from './modules/inventory';
+import { leaveRouter } from './modules/leave';
+import attendanceRouter from './modules/attendance/routes/attendance.routes';
+import { salaryRouter } from './modules/salary';
+import { reportsRouter } from './modules/reports';
+import { notificationsRouter } from './modules/notifications';
+import { profileRouter } from './modules/profile';
 
 import protect from './shared/middleware/authMiddleware';
 import { authorize } from './shared/middleware/roleMiddleware';
@@ -64,14 +64,14 @@ app.use('/api/manager', protect, authorize('manager', 'admin'), managerRouter);
 app.use('/api/employee', protect, authorize('employee', 'manager', 'admin'), employeeRouter);
 app.use('/api/performance', protect, performanceRouter);
 
-import { getActiveGarmentProducts } from './features/production/controllers/garmentProduct.controller';
+import { getActiveGarmentProducts } from './modules/production/controllers/garmentProduct.controller';
 
 app.get('/api/garment-products/active', protect, getActiveGarmentProducts);
 
-import categoryRouter from './features/inventory/routes/category.routes';
-import warehouseRouter from './features/inventory/routes/warehouse.routes';
+import categoryRouter from './modules/inventory/routes/category.routes';
+import warehouseRouter from './modules/inventory/routes/warehouse.routes';
 
-import settingsRouter from './features/settings/routes/settings.routes';
+import settingsRouter from './modules/settings/routes/settings.routes';
 
 app.use('/api/support', protect, supportRouter);
 app.use('/api/tasks', protect, tasksRouter);

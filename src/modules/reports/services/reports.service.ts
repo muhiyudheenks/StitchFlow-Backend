@@ -1,6 +1,6 @@
 import ProductionBatch from '../../production/models/productionBatchModel';
 import Task from '../../tasks/models/taskModel';
-import AttendanceRecord from '../../attendance/models/managerAttendance.model';
+import AttendanceRecord from '../../attendance/models/attendanceModel';
 import User from '../../auth/models/userModel';
 
 export class ReportsService {

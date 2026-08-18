@@ -1,2 +1,6 @@
-// Attendance feature module
-export {};
+export { default as AttendanceService } from './services/attendance.service';
+export { AttendanceRepository } from './repositories/attendance.repository';
+export { default as AttendanceRecord } from './models/attendanceModel';
+export { default as attendanceRouter, adminRouter } from './routes/attendance.routes';
+export * from './types/attendance.types';
+export * from './validators/attendance.validators';

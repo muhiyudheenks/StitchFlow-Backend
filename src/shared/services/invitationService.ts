@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { IUser } from '../../features/auth/models/userModel';
+import { IUser } from '../../modules/auth/models/userModel';
 import { sendInvitationEmail } from './emailService';
 
 export const resendSetupPasswordToken = async (user: IUser): Promise<{ user: IUser; rawToken: string }> => {

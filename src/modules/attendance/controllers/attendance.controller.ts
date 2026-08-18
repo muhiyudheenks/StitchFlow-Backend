@@ -47,6 +47,14 @@ export const getAttendanceHistory = asyncHandler(async (req: AuthRequest, res: R
     return res.status(200).json({ success: true, message: 'Attendance history retrieved', data });
 });
 
+export const getTeamAttendance = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const userId = req.user?.id;
+    if (!userId) throw AppError.unauthorized('Unauthorized');
+
+    const data = await service.getTeamAttendance(userId);
+    return res.status(200).json({ success: true, message: 'Team attendance retrieved', data });
+});
+
 export const getAllAttendance = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const role = req.user?.role || 'admin';
     const userId = req.user?.id || '';
@@ -54,7 +62,7 @@ export const getAllAttendance = asyncHandler(async (req: AuthRequest, res: Respo
     return res.status(200).json({ success: true, message: 'All attendance records retrieved', data });
 });
 
-// --- Admin handlers (preserve existing admin response formats) ---
+// --- Admin handlers ---
 export const adminCheckIn = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const record = await service.checkIn(req.body);
     return sendResponse(res, HTTP_STATUS.CREATED, true, RESPONSE_MESSAGES.ATTENDANCE_CHECKIN_SUCCESS, record);

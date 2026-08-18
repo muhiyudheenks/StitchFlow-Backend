@@ -1,11 +1,19 @@
+import mongoose from 'mongoose';
 import AttendanceRecord, { ISession } from '../models/attendanceModel';
 import User from '../../auth/models/userModel';
-import mongoose from 'mongoose';
 import { AppError } from '../../../shared/errors';
 import { settingsService } from '../../settings/services/settings.service';
 import { getPaginationOptions, buildPaginationMeta } from '../../user/utils/admin.utils';
+import { AttendanceRepository } from '../repositories/attendance.repository';
+import { CheckInDTO, CheckOutDTO, EmployeeDashboardSummary } from '../types/attendance.types';
 
 export class AttendanceService {
+    private attendanceRepository: AttendanceRepository;
+
+    constructor() {
+        this.attendanceRepository = new AttendanceRepository();
+    }
+
     private getTodayDateString(): string {
         const now = new Date();
         const year = now.getFullYear();
@@ -41,16 +49,7 @@ export class AttendanceService {
     }
 
     private calculateTotalHours(sessions: ISession[]): number {
-        let totalMs = 0;
-        for (const session of sessions) {
-            if (session.checkInTime && session.checkOutTime) {
-                const start = new Date(session.checkInTime).getTime();
-                const end = new Date(session.checkOutTime).getTime();
-                if (end > start) totalMs += end - start;
-            }
-        }
-        const hours = totalMs / (1000 * 60 * 60);
-        return Math.round(hours * 10) / 10;
+        return this.attendanceRepository.calculateTotalHours(sessions);
     }
 
     private formatSessions(sessions: ISession[] = []) {
@@ -62,7 +61,10 @@ export class AttendanceService {
         }));
     }
 
-    // If userId is provided -> employee-specific; otherwise -> admin/all view
+    // ==========================================
+    // Employee Operations
+    // ==========================================
+
     async getTodayAttendance(userId?: string) {
         const dateStr = this.getTodayDateString();
         if (!userId) {
@@ -83,7 +85,7 @@ export class AttendanceService {
                     department: (r.employeeId as any)?.department || 'Production',
                     date: r.date,
                     checkIn: formattedSessions[0]?.checkIn || r.checkIn || null,
-                    checkOut: isCheckedIn ? null : (formattedSessions.filter(s => s.checkOutTime).slice(-1)[0]?.checkOut || r.checkOut || null),
+                    checkOut: isCheckedIn ? null : (formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || r.checkOut || null),
                     hours: `${totalHours.toFixed(1)}h`,
                     totalHours,
                     status: r.status,
@@ -113,7 +115,7 @@ export class AttendanceService {
         return {
             isCheckedIn,
             checkIn: formattedSessions[0]?.checkIn || record.checkIn || null,
-            checkOut: isCheckedIn ? null : (formattedSessions.filter(s => s.checkOutTime).slice(-1)[0]?.checkOut || record.checkOut || null),
+            checkOut: isCheckedIn ? null : (formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || record.checkOut || null),
             workingHours: `${totalHours.toFixed(1)} hrs`,
             totalHours,
             overtimeHours: record.overtimeHours || 0,
@@ -122,8 +124,7 @@ export class AttendanceService {
         };
     }
 
-    // Supports both user flow (string userId) and admin DTO flow ({ employeeId, checkInTime, status })
-    async checkIn(userIdOrDto: string | any) {
+    async checkIn(userIdOrDto: string | CheckInDTO) {
         const dateStr = this.getTodayDateString();
         const now = new Date();
         const timeStr = this.formatTimeString(now);
@@ -202,8 +203,7 @@ export class AttendanceService {
         return record;
     }
 
-    // Supports admin DTO or userId string
-    async checkOut(userIdOrDto: string | any) {
+    async checkOut(userIdOrDto: string | CheckOutDTO) {
         const dateStr = this.getTodayDateString();
         const now = new Date();
         const timeStr = this.formatTimeString(now);
@@ -300,7 +300,7 @@ export class AttendanceService {
                 id: r._id.toString(),
                 date: r.date,
                 checkIn: formattedSessions[0]?.checkIn || r.checkIn || null,
-                checkOut: formattedSessions.filter(s => s.checkOutTime).slice(-1)[0]?.checkOut || r.checkOut || null,
+                checkOut: formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || r.checkOut || null,
                 hours: `${totalHours.toFixed(1)}h`,
                 totalHours,
                 status: r.status,
@@ -309,39 +309,52 @@ export class AttendanceService {
         });
     }
 
-    async getEmployeeDashboardSummary(userId?: string) {
-        if (!userId) return { todayStatus: 'not_checked_in', checkInTime: null, checkOutTime: null, monthPresentDays: 0, monthHoursWorked: 0 };
+    async getEmployeeDashboardSummary(userId?: string): Promise<EmployeeDashboardSummary> {
+        if (!userId) {
+            return {
+                todayStatus: 'not_checked_in',
+                checkInTime: null,
+                checkOutTime: null,
+                monthPresentDays: 0,
+                monthHoursWorked: 0,
+            };
+        }
 
         const todayData: any = await this.getTodayAttendance(userId);
         const now = new Date();
         const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const prefix = `${year}-${month}`;
-        const monthRecords = await AttendanceRecord.find({ employeeId: userId, date: new RegExp(`^${prefix}`) });
+        const month = now.getMonth() + 1;
 
-        const monthPresentDays = monthRecords.filter((r: any) => (r.status || '').toLowerCase() === 'present' || (r.status || '').toLowerCase() === 'late').length;
-        const monthHoursWorked = monthRecords.reduce((acc: number, r: any) => acc + this.calculateTotalHours(r.sessions || []), 0);
+        const summary = await this.attendanceRepository.getEmployeeMonthlySummary(userId, year, month);
 
         return {
             todayStatus: todayData.status || (todayData.isCheckedIn ? 'present' : 'absent'),
             checkInTime: todayData.checkIn || null,
             checkOutTime: todayData.checkOut || null,
-            monthPresentDays,
-            monthHoursWorked,
+            monthPresentDays: summary.monthPresentDays,
+            monthHoursWorked: summary.monthHoursWorked,
         };
     }
+
+    // ==========================================
+    // Manager Operations
+    // ==========================================
+
+    async getTeamAttendance(managerId: string) {
+        return this.getAllAttendance('manager', managerId);
+    }
+
+    // ==========================================
+    // Admin & Cross-Role Operations
+    // ==========================================
 
     async getAllAttendance(role: string, userId: string) {
         let filter: any = {};
         if (role === 'manager') {
-            // convert manager id to ObjectId explicitly
             const managerObjectId = new mongoose.Types.ObjectId(userId);
-
-            // find employees assigned to this manager
             const teamUsers = await User.find({ role: 'employee', managerId: managerObjectId }).select('_id');
             const employeeIds = teamUsers.map((u: any) => new mongoose.Types.ObjectId(u._id));
 
-            // fetch attendance for employees in manager's team OR records that have managerId matching the manager
             filter = {
                 $or: [
                     { employeeId: { $in: employeeIds } },
@@ -351,7 +364,7 @@ export class AttendanceService {
         }
 
         const records = await AttendanceRecord.find(filter)
-            .populate('employeeId', 'name email department role')
+            .populate('employeeId', 'fullName name email department designation role')
             .sort({ date: -1, createdAt: -1 });
 
         return records.map((r: any) => {
@@ -360,12 +373,12 @@ export class AttendanceService {
 
             return {
                 id: r._id.toString(),
-                employeeName: (r.employeeId as any)?.fullName || 'Employee',
+                employeeName: (r.employeeId as any)?.fullName || (r.employeeId as any)?.name || 'Employee',
                 employeeEmail: (r.employeeId as any)?.email || '',
                 department: (r.employeeId as any)?.department || 'Production',
                 date: r.date,
                 checkIn: formattedSessions[0]?.checkIn || r.checkIn || null,
-                checkOut: formattedSessions.filter(s => s.checkOutTime).slice(-1)[0]?.checkOut || r.checkOut || null,
+                checkOut: formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || r.checkOut || null,
                 hours: `${totalHours.toFixed(1)}h`,
                 status: r.status,
                 sessions: formattedSessions,
@@ -373,7 +386,6 @@ export class AttendanceService {
         });
     }
 
-    // Admin helpers
     async getAttendanceSummary() {
         const todayStr = this.getTodayDateString();
         const totalEmployees = await User.countDocuments({ status: 'active' });

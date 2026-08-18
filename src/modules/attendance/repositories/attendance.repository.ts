@@ -1,9 +1,12 @@
+import mongoose from 'mongoose';
 import AttendanceRecord, { IAttendanceRecord, ISession } from '../models/attendanceModel';
-import User from '../../auth/models/userModel';
 
 export class AttendanceRepository {
     private getTodayStr(d: Date = new Date()): string {
-        return d.toISOString().split('T')[0];
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
     }
 
     private getStartAndEndOfDay(date: Date = new Date()) {
@@ -16,6 +19,28 @@ export class AttendanceRepository {
 
     private formatTimeStr(d: Date): string {
         return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    }
+
+    calculateTotalHours(sessions: ISession[]): number {
+        let totalMs = 0;
+        for (const session of sessions) {
+            if (session.checkInTime && session.checkOutTime) {
+                const start = new Date(session.checkInTime).getTime();
+                const end = new Date(session.checkOutTime).getTime();
+                if (end > start) {
+                    totalMs += end - start;
+                }
+            }
+        }
+        return Math.max(0, Math.round((totalMs / (1000 * 60 * 60)) * 10) / 10);
+    }
+
+    async findTodayByEmployee(employeeId: string, dateStr: string = this.getTodayStr()): Promise<IAttendanceRecord | null> {
+        return await AttendanceRecord.findOne({ employeeId, date: dateStr });
+    }
+
+    async findById(attendanceId: string): Promise<IAttendanceRecord | null> {
+        return await AttendanceRecord.findById(attendanceId);
     }
 
     async checkIn(
@@ -49,18 +74,20 @@ export class AttendanceRepository {
             existing.checkOutTime = null;
             existing.status = status;
             const saved = await existing.save();
-            return await AttendanceRecord.findById(saved._id).populate('employeeId', 'fullName email department designation') as IAttendanceRecord;
+            return (await AttendanceRecord.findById(saved._id).populate('employeeId', 'fullName email department designation')) as IAttendanceRecord;
         }
 
         const record = new AttendanceRecord({
             employeeId,
             date: todayStr,
-            sessions: [{
-                checkInTime,
-                checkOutTime: null,
-                checkIn: checkInFormatted,
-                checkOut: null,
-            }],
+            sessions: [
+                {
+                    checkInTime,
+                    checkOutTime: null,
+                    checkIn: checkInFormatted,
+                    checkOut: null,
+                },
+            ],
             checkIn: checkInFormatted,
             checkInTime,
             checkOut: null,
@@ -72,7 +99,7 @@ export class AttendanceRepository {
             notes,
         });
         const saved = await record.save();
-        return await AttendanceRecord.findById(saved._id).populate('employeeId', 'fullName email department designation') as IAttendanceRecord;
+        return (await AttendanceRecord.findById(saved._id).populate('employeeId', 'fullName email department designation')) as IAttendanceRecord;
     }
 
     async checkOut(
@@ -116,20 +143,6 @@ export class AttendanceRepository {
         return await AttendanceRecord.findById(record._id).populate('employeeId', 'fullName email department designation');
     }
 
-    private calculateTotalHours(sessions: ISession[]): number {
-        let totalMs = 0;
-        for (const session of sessions) {
-            if (session.checkInTime && session.checkOutTime) {
-                const start = new Date(session.checkInTime).getTime();
-                const end = new Date(session.checkOutTime).getTime();
-                if (end > start) {
-                    totalMs += (end - start);
-                }
-            }
-        }
-        return Math.max(0, Math.round((totalMs / (1000 * 60 * 60)) * 10) / 10);
-    }
-
     async findTodayAttendance(): Promise<IAttendanceRecord[]> {
         const todayStr = this.getTodayStr();
         const { start, end } = this.getStartAndEndOfDay();
@@ -154,7 +167,7 @@ export class AttendanceRepository {
         const [records, total] = await Promise.all([
             AttendanceRecord.find({ employeeId })
                 .populate('employeeId', 'fullName email department designation')
-                .sort({ createdAt: -1 })
+                .sort({ date: -1, createdAt: -1 })
                 .skip(skip)
                 .limit(limit),
             AttendanceRecord.countDocuments({ employeeId }),
@@ -170,7 +183,7 @@ export class AttendanceRepository {
             date: new RegExp(`^${prefix}`),
         })
             .populate('employeeId', 'fullName email department designation')
-            .sort({ createdAt: -1 });
+            .sort({ date: -1, createdAt: -1 });
     }
 
     async countTodayPresent(): Promise<number> {
@@ -215,5 +228,69 @@ export class AttendanceRepository {
             late,
             halfDay,
         };
+    }
+
+    async getEmployeeMonthlySummary(
+        userId: string,
+        year: number,
+        month: number
+    ): Promise<{ monthPresentDays: number; monthHoursWorked: number }> {
+        const monthStr = month < 10 ? `0${month}` : `${month}`;
+        const prefix = `${year}-${monthStr}`;
+
+        const employeeObjectId = mongoose.Types.ObjectId.isValid(userId)
+            ? new mongoose.Types.ObjectId(userId)
+            : userId;
+
+        const result = await AttendanceRecord.aggregate([
+            {
+                $match: {
+                    employeeId: employeeObjectId,
+                    date: new RegExp(`^${prefix}`),
+                },
+            },
+            {
+                $project: {
+                    status: 1,
+                    sessions: 1,
+                    totalHours: 1,
+                },
+            },
+            {
+                $group: {
+                    _id: null,
+                    monthPresentDays: {
+                        $sum: {
+                            $cond: [
+                                {
+                                    $in: [
+                                        { $toLower: '$status' },
+                                        ['present', 'late', 'half_day'],
+                                    ],
+                                },
+                                1,
+                                0,
+                            ],
+                        },
+                    },
+                    records: { $push: '$$ROOT' },
+                },
+            },
+        ]);
+
+        if (!result || result.length === 0) {
+            return { monthPresentDays: 0, monthHoursWorked: 0 };
+        }
+
+        const monthPresentDays = result[0].monthPresentDays || 0;
+        const records = result[0].records || [];
+
+        let monthHoursWorked = 0;
+        for (const r of records) {
+            monthHoursWorked += this.calculateTotalHours(r.sessions || []);
+        }
+        monthHoursWorked = Math.round(monthHoursWorked * 10) / 10;
+
+        return { monthPresentDays, monthHoursWorked };
     }
 }

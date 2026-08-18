@@ -3,7 +3,7 @@ import User from '../../auth/models/userModel';
 import Task from '../../tasks/models/taskModel';
 import ProductionBatch from '../../production/models/productionBatchModel';
 import LeaveRequest from '../../leave/models/leaveRequestModel';
-import AttendanceRecord from '../../attendance/models/managerAttendance.model';
+import AttendanceRecord from '../../attendance/models/attendanceModel';
 import { AppError } from '../../../shared/errors';
 
 import { TaskService } from '../../tasks/services/tasks.service';

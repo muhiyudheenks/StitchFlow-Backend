@@ -1,6 +1,6 @@
 import User from '../../auth/models/userModel';
 import Task, { ITask } from '../../tasks/models/taskModel';
-import AttendanceRecord, { IAttendanceRecord } from '../../attendance/models/managerAttendance.model';
+import AttendanceRecord, { IAttendanceRecord } from '../../attendance/models/attendanceModel';
 import LeaveRequest from '../../leave/models/leaveRequestModel';
 
 export interface MonthlyPerformanceRecord {

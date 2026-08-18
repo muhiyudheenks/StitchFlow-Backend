@@ -1,7 +1,7 @@
 import { Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { AuthRequest } from '../types/roleTypes';
-import User from '../../features/auth/models/userModel';
+import User from '../../modules/auth/models/userModel';
 import { PERMISSIONS } from '../constants/permissions';
 
 interface JwtPayload {
