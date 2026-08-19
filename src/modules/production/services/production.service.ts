@@ -503,26 +503,26 @@ export async function getTodayProduction() {
 }
 
 export async function getTarget() {
-    const stats = await repo.aggregateProductionStats();
+    const stats = await repo.aggregateStats();
     const totalTarget = stats.length > 0 ? stats[0].totalTarget : 0;
     return { totalTarget };
 }
 
 export async function getCompleted() {
-    const stats = await repo.aggregateProductionStats();
+    const stats = await repo.aggregateStats();
     const totalCompleted = stats.length > 0 ? stats[0].totalCompleted : 0;
     return { totalCompleted };
 }
 
 export async function getRemaining() {
-    const stats = await repo.aggregateProductionStats();
+    const stats = await repo.aggregateStats();
     const totalTarget = stats.length > 0 ? stats[0].totalTarget : 0;
     const totalCompleted = stats.length > 0 ? stats[0].totalCompleted : 0;
     return { totalRemaining: Math.max(0, totalTarget - totalCompleted) };
 }
 
 export async function getEfficiency() {
-    const stats = await repo.aggregateProductionStats();
+    const stats = await repo.aggregateStats();
     const totalTarget = stats.length > 0 ? stats[0].totalTarget : 0;
     const totalCompleted = stats.length > 0 ? stats[0].totalCompleted : 0;
     const efficiency = totalTarget > 0 ? Math.min(100, Math.round((totalCompleted / totalTarget) * 100)) : 0;
