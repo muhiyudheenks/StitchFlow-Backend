@@ -30,14 +30,19 @@ export const getEmployeeById = asyncHandler(async (req: AuthRequest, res: Respon
 
 export const createEmployee = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response> => {
     const adminEmail = req.user?.email || 'Admin';
-    const employee = await service.createEmployee(req.body, adminEmail);
-    return sendResponse(
-        res,
-        HTTP_STATUS.CREATED,
-        true,
-        'Employee created successfully. Setup invitation link sent.',
-        employee
-    );
+    const { employee, emailSent, emailError } = await service.createEmployee(req.body, adminEmail);
+    const message = emailSent
+        ? 'Employee created successfully. Setup invitation link sent.'
+        : 'Employee created successfully, but invitation link email could not be sent.';
+
+    return res.status(HTTP_STATUS.CREATED).json({
+        success: true,
+        message,
+        data: employee,
+        employee,
+        emailSent,
+        emailError,
+    });
 });
 
 export const updateEmployee = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response> => {

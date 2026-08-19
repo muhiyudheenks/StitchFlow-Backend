@@ -45,17 +45,34 @@ export class AdminEmployeeService {
                 if (dto.phone) existing.phone = dto.phone;
                 if (dto.employeeType) existing.employeeType = dto.employeeType as any;
                 if (dto.designation) existing.designation = dto.designation;
-                await resendSetupPasswordToken(existing);
-                return existing.toPublicJSON();
+                let emailSent = true;
+                let emailError: string | undefined = undefined;
+                try {
+                    await resendSetupPasswordToken(existing);
+                } catch (emailErr: any) {
+                    emailSent = false;
+                    emailError = emailErr.message || 'Failed to send invitation email';
+                    console.error(`[AdminEmployeeService] Email re-invitation error for ${existing.email}:`, emailErr);
+                }
+                return {
+                    employee: existing.toPublicJSON(),
+                    emailSent,
+                    emailError,
+                };
             }
             throw AppError.conflict('An account with this email address already exists');
         }
 
         const newEmployee = await this.repo.create(dto);
 
+        let emailSent = true;
+        let emailError: string | undefined = undefined;
+
         try {
             await resendSetupPasswordToken(newEmployee);
         } catch (emailErr: any) {
+            emailSent = false;
+            emailError = emailErr.message || 'Failed to send invitation email';
             console.error(`[AdminEmployeeService] Email invitation error for ${newEmployee.email}:`, emailErr);
         }
 
@@ -71,7 +88,11 @@ export class AdminEmployeeService {
             console.error('[AdminEmployeeService] Activity log error:', actErr);
         }
 
-        return newEmployee.toPublicJSON();
+        return {
+            employee: newEmployee.toPublicJSON(),
+            emailSent,
+            emailError,
+        };
     }
 
     async updateEmployee(id: string, dto: UpdateEmployeeDto, adminEmail: string = 'Admin') {
