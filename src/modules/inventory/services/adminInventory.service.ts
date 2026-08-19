@@ -107,11 +107,11 @@ export async function stockOut(id: string, dto: StockAdjustDto, adminName: strin
 }
 
 export async function getLowStock() {
-    return await repo.findLowStockInventory();
+    return await repo.findLowStock();
 }
 
 export async function getSummary() {
-    const aggregation = await repo.aggregateInventorySummary();
+    const aggregation = await repo.aggregateSummary();
     let totalItems = 0;
     let inStock = 0;
     let lowStock = 0;
