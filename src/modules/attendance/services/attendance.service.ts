@@ -1,200 +1,591 @@
+// import mongoose from 'mongoose';
+// import AttendanceRecord, { ISession } from '../models/attendanceModel';
+// import User from '../../auth/models/userModel';
+// import { AppError } from '../../../shared/errors';
+// import { settingsService } from '../../settings/services/settings.service';
+// import { getPaginationOptions, buildPaginationMeta } from '../../user/utils/admin.utils';
+// import { AttendanceRepository } from '../repositories/attendance.repository';
+// import { CheckInDTO, CheckOutDTO, EmployeeDashboardSummary } from '../types/attendance.types';
+
+// export class AttendanceService {
+//     private attendanceRepository: AttendanceRepository;
+
+//     constructor() {
+//         this.attendanceRepository = new AttendanceRepository();
+//     }
+
+//     private getTodayDateString(): string {
+//         const now = new Date();
+//         const year = now.getFullYear();
+//         const month = String(now.getMonth() + 1).padStart(2, '0');
+//         const day = String(now.getDate()).padStart(2, '0');
+//         return `${year}-${month}-${day}`;
+//     }
+
+//     private formatTimeString(date: Date): string {
+//         return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+//     }
+
+//     private async computeIsLate(now: Date): Promise<boolean> {
+//         try {
+//             const settings = await settingsService.getSettings();
+//             if (settings && settings.shiftStartTime) {
+//                 const match = settings.shiftStartTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+//                 if (match) {
+//                     let shiftHour = parseInt(match[1], 10);
+//                     const shiftMin = parseInt(match[2], 10);
+//                     const ampm = match[3].toUpperCase();
+//                     if (ampm === 'PM' && shiftHour < 12) shiftHour += 12;
+//                     if (ampm === 'AM' && shiftHour === 12) shiftHour = 0;
+//                     const thresholdMin = shiftHour * 60 + shiftMin + (settings.lateAfterMinutes ?? 15);
+//                     const currentMin = now.getHours() * 60 + now.getMinutes();
+//                     return currentMin > thresholdMin;
+//                 }
+//             }
+//         } catch (e) {
+//             console.error('[AttendanceService] Error loading settings for isLate check:', e);
+//         }
+//         return now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 15);
+//     }
+
+//     private calculateTotalHours(sessions: ISession[]): number {
+//         return this.attendanceRepository.calculateTotalHours(sessions);
+//     }
+
+//     private formatSessions(sessions: ISession[] = []) {
+//         return sessions.map((s) => ({
+//             checkIn: s.checkIn || (s.checkInTime ? this.formatTimeString(new Date(s.checkInTime)) : '—'),
+//             checkOut: s.checkOut || (s.checkOutTime ? this.formatTimeString(new Date(s.checkOutTime)) : null),
+//             checkInTime: s.checkInTime,
+//             checkOutTime: s.checkOutTime || null,
+//         }));
+//     }
+
+//     // ==========================================
+//     // Employee Operations
+//     // ==========================================
+
+//     async getTodayAttendance(userId?: string) {
+//         const dateStr = this.getTodayDateString();
+//         if (!userId) {
+//             const records = await AttendanceRecord.find({ date: dateStr })
+//                 .populate('employeeId', 'fullName email department designation')
+//                 .sort({ createdAt: -1 });
+
+//             return records.map((r: any) => {
+//                 const formattedSessions = this.formatSessions(r.sessions || []);
+//                 const openSession = formattedSessions.find((s) => !s.checkOutTime);
+//                 const isCheckedIn = Boolean(openSession);
+//                 const totalHours = this.calculateTotalHours(r.sessions || []);
+
+//                 return {
+//                     id: r._id.toString(),
+//                     employeeName: (r.employeeId as any)?.fullName || 'Employee',
+//                     employeeEmail: (r.employeeId as any)?.email || '',
+//                     department: (r.employeeId as any)?.department || 'Production',
+//                     date: r.date,
+//                     checkIn: formattedSessions[0]?.checkIn || r.checkIn || null,
+//                     checkOut: isCheckedIn ? null : (formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || r.checkOut || null),
+//                     hours: `${totalHours.toFixed(1)}h`,
+//                     totalHours,
+//                     status: r.status,
+//                     sessions: formattedSessions,
+//                 };
+//             });
+//         }
+
+//         const record = await AttendanceRecord.findOne({ employeeId: userId, date: dateStr });
+//         if (!record) {
+//             return {
+//                 isCheckedIn: false,
+//                 checkIn: null,
+//                 checkOut: null,
+//                 workingHours: '0.0 hrs',
+//                 totalHours: 0,
+//                 status: 'absent',
+//                 sessions: [] as any[],
+//             };
+//         }
+
+//         const formattedSessions = this.formatSessions(record.sessions || []);
+//         const openSession = formattedSessions.find((s) => !s.checkOutTime);
+//         const isCheckedIn = Boolean(openSession);
+//         const totalHours = this.calculateTotalHours(record.sessions || []);
+
+//         return {
+//             isCheckedIn,
+//             checkIn: formattedSessions[0]?.checkIn || record.checkIn || null,
+//             checkOut: isCheckedIn ? null : (formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || record.checkOut || null),
+//             workingHours: `${totalHours.toFixed(1)} hrs`,
+//             totalHours,
+//             overtimeHours: record.overtimeHours || 0,
+//             status: record.status,
+//             sessions: formattedSessions,
+//         };
+//     }
+
+//     async checkIn(userIdOrDto: string | CheckInDTO) {
+//         const dateStr = this.getTodayDateString();
+//         const now = new Date();
+//         const timeStr = this.formatTimeString(now);
+//         const isLate = await this.computeIsLate(now);
+
+//         if (typeof userIdOrDto !== 'string') {
+//             const dto = userIdOrDto;
+//             const employeeId = dto.employeeId;
+//             const checkInTime = dto.checkInTime ? new Date(dto.checkInTime) : now;
+//             const time = dto.checkIn ? dto.checkIn : this.formatTimeString(checkInTime);
+
+//             let record = await AttendanceRecord.findOne({ employeeId, date: dateStr });
+//             if (!record) {
+//                 record = new AttendanceRecord({
+//                     employeeId,
+//                     date: dateStr,
+//                     sessions: [{ checkInTime, checkOutTime: null, checkIn: time, checkOut: null }],
+//                     checkIn: time,
+//                     checkInTime,
+//                     checkOut: null,
+//                     checkOutTime: null,
+//                     totalHours: 0,
+//                     overtimeHours: 0,
+//                     status: dto.status || (isLate ? 'late' : 'present'),
+//                     shift: 'Shift A',
+//                     isApproved: false,
+//                 });
+//             } else {
+//                 const openSession = record.sessions.find((s) => !s.checkOutTime);
+//                 if (openSession) throw AppError.badRequest('Employee already checked in');
+
+//                 const newSession: ISession = { checkInTime, checkOutTime: null, checkIn: time, checkOut: null };
+//                 record.sessions.push(newSession);
+//                 record.status = dto.status || (isLate ? 'late' : 'present');
+//                 record.checkIn = record.sessions[0]?.checkIn ?? time;
+//                 record.checkInTime = record.sessions[0]?.checkInTime ?? checkInTime;
+//                 record.checkOut = null;
+//                 record.checkOutTime = null;
+//             }
+
+//             await record.save();
+//             return record;
+//         }
+
+//         const userId = userIdOrDto as string;
+//         let record = await AttendanceRecord.findOne({ employeeId: userId, date: dateStr });
+//         if (!record) {
+//             record = new AttendanceRecord({
+//                 employeeId: userId,
+//                 date: dateStr,
+//                 sessions: [{ checkInTime: now, checkOutTime: null, checkIn: timeStr, checkOut: null }],
+//                 checkIn: timeStr,
+//                 checkInTime: now,
+//                 checkOut: null,
+//                 checkOutTime: null,
+//                 totalHours: 0,
+//                 overtimeHours: 0,
+//                 status: isLate ? 'late' : 'present',
+//                 shift: 'Shift A',
+//                 isApproved: false,
+//             });
+//         } else {
+//             const openSession = record.sessions.find((s) => !s.checkOutTime);
+//             if (openSession) throw AppError.badRequest('You are already checked in');
+
+//             const newSession: ISession = { checkInTime: now, checkOutTime: null, checkIn: timeStr, checkOut: null };
+//             record.sessions.push(newSession);
+//             record.status = isLate ? 'late' : 'present';
+//             record.checkIn = record.sessions[0]?.checkIn ?? timeStr;
+//             record.checkInTime = record.sessions[0]?.checkInTime ?? now;
+//             record.checkOut = null;
+//             record.checkOutTime = null;
+//         }
+
+//         await record.save();
+//         return record;
+//     }
+
+//     async checkOut(userIdOrDto: string | CheckOutDTO) {
+//         const dateStr = this.getTodayDateString();
+//         const now = new Date();
+//         const timeStr = this.formatTimeString(now);
+
+//         if (typeof userIdOrDto !== 'string') {
+//             const dto = userIdOrDto;
+//             const attendanceId = dto.attendanceId;
+//             const employeeId = dto.employeeId;
+//             const checkOutTime = dto.checkOutTime ? new Date(dto.checkOutTime) : now;
+//             const time = dto.checkOut ? dto.checkOut : this.formatTimeString(checkOutTime);
+
+//             let record: any = null;
+//             if (attendanceId) record = await AttendanceRecord.findById(attendanceId);
+//             else if (employeeId) record = await AttendanceRecord.findOne({ employeeId, date: dateStr });
+
+//             if (!record) throw AppError.badRequest('Active attendance record not found for checkout');
+
+//             const openSessionIndex = record.sessions.findIndex((s: any) => !s.checkOutTime);
+//             if (openSessionIndex === -1) throw AppError.badRequest('Active attendance record not found for checkout');
+
+//             record.sessions[openSessionIndex].checkOutTime = checkOutTime;
+//             record.sessions[openSessionIndex].checkOut = time;
+//             record.checkOut = time;
+//             record.checkOutTime = checkOutTime;
+
+//             const totalHours = this.calculateTotalHours(record.sessions);
+//             record.totalHours = totalHours;
+
+//             let halfDayThreshold = 4;
+//             let minFullDayHours = 8;
+//             try {
+//                 const settings = await settingsService.getSettings();
+//                 if (settings) {
+//                     halfDayThreshold = settings.halfDayThresholdHours ?? 4;
+//                     minFullDayHours = settings.minFullDayHours ?? 8;
+//                 }
+//             } catch (e) {
+//                 console.error('[AttendanceService] Error loading settings for checkOut thresholds:', e);
+//             }
+
+//             if (totalHours < halfDayThreshold) record.status = 'half_day';
+//             else if (totalHours > minFullDayHours) record.overtimeHours = Math.round((totalHours - minFullDayHours) * 10) / 10;
+//             else record.overtimeHours = 0;
+
+//             await record.save();
+//             return record;
+//         }
+
+//         const userId = userIdOrDto as string;
+//         const record = await AttendanceRecord.findOne({ employeeId: userId, date: dateStr });
+//         if (!record) throw AppError.badRequest('You are not currently checked in');
+
+//         const openSessionIndex = record.sessions.findIndex((s) => !s.checkOutTime);
+//         if (openSessionIndex === -1) throw AppError.badRequest('You are not currently checked in');
+
+//         record.sessions[openSessionIndex].checkOutTime = now;
+//         record.sessions[openSessionIndex].checkOut = timeStr;
+//         record.checkOut = timeStr;
+//         record.checkOutTime = now;
+
+//         const totalHours = this.calculateTotalHours(record.sessions);
+//         record.totalHours = totalHours;
+
+//         let halfDayThreshold = 4;
+//         let minFullDayHours = 8;
+//         try {
+//             const settings = await settingsService.getSettings();
+//             if (settings) {
+//                 halfDayThreshold = settings.halfDayThresholdHours ?? 4;
+//                 minFullDayHours = settings.minFullDayHours ?? 8;
+//             }
+//         } catch (e) {
+//             console.error('[AttendanceService] Error loading settings for checkOut thresholds:', e);
+//         }
+
+//         if (totalHours < halfDayThreshold) record.status = 'half_day';
+//         else if (totalHours > minFullDayHours) record.overtimeHours = Math.round((totalHours - minFullDayHours) * 10) / 10;
+//         else record.overtimeHours = 0;
+
+//         await record.save();
+//         return record;
+//     }
+
+//     async getAttendanceHistory(userId: string) {
+//         const records = await AttendanceRecord.find({ employeeId: userId })
+//             .sort({ date: -1, createdAt: -1 })
+//             .limit(30);
+
+//         return records.map((r: any) => {
+//             const totalHours = this.calculateTotalHours(r.sessions || []);
+//             const formattedSessions = this.formatSessions(r.sessions || []);
+
+//             return {
+//                 id: r._id.toString(),
+//                 date: r.date,
+//                 checkIn: formattedSessions[0]?.checkIn || r.checkIn || null,
+//                 checkOut: formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || r.checkOut || null,
+//                 hours: `${totalHours.toFixed(1)}h`,
+//                 totalHours,
+//                 status: r.status,
+//                 sessions: formattedSessions,
+//             };
+//         });
+//     }
+
+//     async getEmployeeDashboardSummary(userId?: string): Promise<EmployeeDashboardSummary> {
+//         if (!userId) {
+//             return {
+//                 todayStatus: 'not_checked_in',
+//                 checkInTime: null,
+//                 checkOutTime: null,
+//                 monthPresentDays: 0,
+//                 monthHoursWorked: 0,
+//             };
+//         }
+
+//         const todayData: any = await this.getTodayAttendance(userId);
+//         const now = new Date();
+//         const year = now.getFullYear();
+//         const month = now.getMonth() + 1;
+
+//         const summary = await this.attendanceRepository.getEmployeeMonthlySummary(userId, year, month);
+
+//         return {
+//             todayStatus: todayData.status || (todayData.isCheckedIn ? 'present' : 'absent'),
+//             checkInTime: todayData.checkIn || null,
+//             checkOutTime: todayData.checkOut || null,
+//             monthPresentDays: summary.monthPresentDays,
+//             monthHoursWorked: summary.monthHoursWorked,
+//         };
+//     }
+
+//     // ==========================================
+//     // Manager Operations
+//     // ==========================================
+
+//     async getTeamAttendance(managerId: string) {
+//         return this.getAllAttendance('manager', managerId);
+//     }
+
+//     // ==========================================
+//     // Admin & Cross-Role Operations
+//     // ==========================================
+
+//     async getAllAttendance(role: string, userId: string) {
+//         let filter: any = {};
+//         if (role === 'manager') {
+//             const managerObjectId = new mongoose.Types.ObjectId(userId);
+//             const teamUsers = await User.find({ role: 'employee', managerId: managerObjectId }).select('_id');
+//             const employeeIds = teamUsers.map((u: any) => new mongoose.Types.ObjectId(u._id));
+
+//             filter = {
+//                 $or: [
+//                     { employeeId: { $in: employeeIds } },
+//                     { managerId: managerObjectId },
+//                 ],
+//             };
+//         }
+
+//         const records = await AttendanceRecord.find(filter)
+//             .populate('employeeId', 'fullName name email department designation role')
+//             .sort({ date: -1, createdAt: -1 });
+
+//         return records.map((r: any) => {
+//             const totalHours = this.calculateTotalHours(r.sessions || []);
+//             const formattedSessions = this.formatSessions(r.sessions || []);
+
+//             return {
+//                 id: r._id.toString(),
+//                 employeeName: (r.employeeId as any)?.fullName || (r.employeeId as any)?.name || 'Employee',
+//                 employeeEmail: (r.employeeId as any)?.email || '',
+//                 department: (r.employeeId as any)?.department || 'Production',
+//                 date: r.date,
+//                 checkIn: formattedSessions[0]?.checkIn || r.checkIn || null,
+//                 checkOut: formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || r.checkOut || null,
+//                 hours: `${totalHours.toFixed(1)}h`,
+//                 status: r.status,
+//                 sessions: formattedSessions,
+//             };
+//         });
+//     }
+
+//     async getAttendanceSummary() {
+//         const todayStr = this.getTodayDateString();
+//         const totalEmployees = await User.countDocuments({ status: 'active' });
+
+//         const stats = {
+//             present: await AttendanceRecord.countDocuments({ date: todayStr, status: 'present' }),
+//             late: await AttendanceRecord.countDocuments({ date: todayStr, status: 'late' }),
+//             halfDay: await AttendanceRecord.countDocuments({ date: todayStr, status: 'half_day' }),
+//         };
+
+//         const presentRate = totalEmployees > 0 ? Math.round(((stats.present + stats.late + stats.halfDay) / totalEmployees) * 100) : 0;
+
+//         return {
+//             totalEmployees,
+//             todayPresent: stats.present,
+//             todayAbsent: Math.max(0, totalEmployees - (stats.present + stats.late + stats.halfDay)),
+//             todayLate: stats.late,
+//             todayHalfDay: stats.halfDay,
+//             attendancePercentage: presentRate,
+//         };
+//     }
+
+//     async getEmployeeAttendance(employeeId: string, query: any) {
+//         const { page, limit, skip } = getPaginationOptions(query);
+//         const [records, total] = await Promise.all([
+//             AttendanceRecord.find({ employeeId }).sort({ date: -1 }).skip(skip).limit(limit),
+//             AttendanceRecord.countDocuments({ employeeId }),
+//         ]);
+//         const meta = buildPaginationMeta(total, page, limit);
+
+//         return { records, total, pagination: meta };
+//     }
+
+//     async getMonthlyAttendance(year?: number, month?: number) {
+//         const now = new Date();
+//         const targetYear = year || now.getFullYear();
+//         const targetMonth = month || now.getMonth() + 1;
+//         const prefix = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+//         const records = await AttendanceRecord.find({ date: new RegExp(`^${prefix}`) });
+//         return { year: targetYear, month: targetMonth, totalRecords: records.length, records };
+//     }
+// }
+
+// export default AttendanceService;
 import mongoose from 'mongoose';
 import AttendanceRecord, { ISession } from '../models/attendanceModel';
 import User from '../../auth/models/userModel';
 import { AppError } from '../../../shared/errors';
 import { settingsService } from '../../settings/services/settings.service';
 import { getPaginationOptions, buildPaginationMeta } from '../../user/utils/admin.utils';
-import { AttendanceRepository } from '../repositories/attendance.repository';
+import { calculateTotalHours as repoCalculateTotalHours, getEmployeeMonthlySummary as repoGetEmployeeMonthlySummary } from '../repositories/attendance.repository';
 import { CheckInDTO, CheckOutDTO, EmployeeDashboardSummary } from '../types/attendance.types';
 
-export class AttendanceService {
-    private attendanceRepository: AttendanceRepository;
+function getTodayDateString(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
 
-    constructor() {
-        this.attendanceRepository = new AttendanceRepository();
-    }
+function formatTimeString(date: Date): string {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+}
 
-    private getTodayDateString(): string {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-    }
-
-    private formatTimeString(date: Date): string {
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
-    }
-
-    private async computeIsLate(now: Date): Promise<boolean> {
-        try {
-            const settings = await settingsService.getSettings();
-            if (settings && settings.shiftStartTime) {
-                const match = settings.shiftStartTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-                if (match) {
-                    let shiftHour = parseInt(match[1], 10);
-                    const shiftMin = parseInt(match[2], 10);
-                    const ampm = match[3].toUpperCase();
-                    if (ampm === 'PM' && shiftHour < 12) shiftHour += 12;
-                    if (ampm === 'AM' && shiftHour === 12) shiftHour = 0;
-                    const thresholdMin = shiftHour * 60 + shiftMin + (settings.lateAfterMinutes ?? 15);
-                    const currentMin = now.getHours() * 60 + now.getMinutes();
-                    return currentMin > thresholdMin;
-                }
+async function computeIsLate(now: Date): Promise<boolean> {
+    try {
+        const settings = await settingsService.getSettings();
+        if (settings && settings.shiftStartTime) {
+            const match = settings.shiftStartTime.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+            if (match) {
+                let shiftHour = parseInt(match[1], 10);
+                const shiftMin = parseInt(match[2], 10);
+                const ampm = match[3].toUpperCase();
+                if (ampm === 'PM' && shiftHour < 12) shiftHour += 12;
+                if (ampm === 'AM' && shiftHour === 12) shiftHour = 0;
+                const thresholdMin = shiftHour * 60 + shiftMin + (settings.lateAfterMinutes ?? 15);
+                const currentMin = now.getHours() * 60 + now.getMinutes();
+                return currentMin > thresholdMin;
             }
-        } catch (e) {
-            console.error('[AttendanceService] Error loading settings for isLate check:', e);
         }
-        return now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 15);
+    } catch (e) {
+        console.error('[AttendanceService] Error loading settings for isLate check:', e);
     }
+    return now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 15);
+}
 
-    private calculateTotalHours(sessions: ISession[]): number {
-        return this.attendanceRepository.calculateTotalHours(sessions);
-    }
+function calculateTotalHours(sessions: ISession[]): number {
+    return repoCalculateTotalHours(sessions);
+}
 
-    private formatSessions(sessions: ISession[] = []) {
-        return sessions.map((s) => ({
-            checkIn: s.checkIn || (s.checkInTime ? this.formatTimeString(new Date(s.checkInTime)) : '—'),
-            checkOut: s.checkOut || (s.checkOutTime ? this.formatTimeString(new Date(s.checkOutTime)) : null),
-            checkInTime: s.checkInTime,
-            checkOutTime: s.checkOutTime || null,
-        }));
-    }
+function formatSessions(sessions: ISession[] = []) {
+    return sessions.map((s) => ({
+        checkIn: s.checkIn || (s.checkInTime ? formatTimeString(new Date(s.checkInTime)) : '—'),
+        checkOut: s.checkOut || (s.checkOutTime ? formatTimeString(new Date(s.checkOutTime)) : null),
+        checkInTime: s.checkInTime,
+        checkOutTime: s.checkOutTime || null,
+    }));
+}
 
-    // ==========================================
-    // Employee Operations
-    // ==========================================
+// ==========================================
+// Employee Operations
+// ==========================================
 
-    async getTodayAttendance(userId?: string) {
-        const dateStr = this.getTodayDateString();
-        if (!userId) {
-            const records = await AttendanceRecord.find({ date: dateStr })
-                .populate('employeeId', 'fullName email department designation')
-                .sort({ createdAt: -1 });
+export async function getTodayAttendance(userId?: string) {
+    const dateStr = getTodayDateString();
+    if (!userId) {
+        const records = await AttendanceRecord.find({ date: dateStr })
+            .populate('employeeId', 'fullName email department designation')
+            .sort({ createdAt: -1 });
 
-            return records.map((r: any) => {
-                const formattedSessions = this.formatSessions(r.sessions || []);
-                const openSession = formattedSessions.find((s) => !s.checkOutTime);
-                const isCheckedIn = Boolean(openSession);
-                const totalHours = this.calculateTotalHours(r.sessions || []);
+        return records.map((r: any) => {
+            const formattedSessions = formatSessions(r.sessions || []);
+            const openSession = formattedSessions.find((s) => !s.checkOutTime);
+            const isCheckedIn = Boolean(openSession);
+            const totalHours = calculateTotalHours(r.sessions || []);
 
-                return {
-                    id: r._id.toString(),
-                    employeeName: (r.employeeId as any)?.fullName || 'Employee',
-                    employeeEmail: (r.employeeId as any)?.email || '',
-                    department: (r.employeeId as any)?.department || 'Production',
-                    date: r.date,
-                    checkIn: formattedSessions[0]?.checkIn || r.checkIn || null,
-                    checkOut: isCheckedIn ? null : (formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || r.checkOut || null),
-                    hours: `${totalHours.toFixed(1)}h`,
-                    totalHours,
-                    status: r.status,
-                    sessions: formattedSessions,
-                };
-            });
-        }
-
-        const record = await AttendanceRecord.findOne({ employeeId: userId, date: dateStr });
-        if (!record) {
             return {
-                isCheckedIn: false,
-                checkIn: null,
-                checkOut: null,
-                workingHours: '0.0 hrs',
-                totalHours: 0,
-                status: 'absent',
-                sessions: [] as any[],
+                id: r._id.toString(),
+                employeeName: (r.employeeId as any)?.fullName || 'Employee',
+                employeeEmail: (r.employeeId as any)?.email || '',
+                department: (r.employeeId as any)?.department || 'Production',
+                date: r.date,
+                checkIn: formattedSessions[0]?.checkIn || r.checkIn || null,
+                checkOut: isCheckedIn ? null : (formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || r.checkOut || null),
+                hours: `${totalHours.toFixed(1)}h`,
+                totalHours,
+                status: r.status,
+                sessions: formattedSessions,
             };
-        }
+        });
+    }
 
-        const formattedSessions = this.formatSessions(record.sessions || []);
-        const openSession = formattedSessions.find((s) => !s.checkOutTime);
-        const isCheckedIn = Boolean(openSession);
-        const totalHours = this.calculateTotalHours(record.sessions || []);
-
+    const record = await AttendanceRecord.findOne({ employeeId: userId, date: dateStr });
+    if (!record) {
         return {
-            isCheckedIn,
-            checkIn: formattedSessions[0]?.checkIn || record.checkIn || null,
-            checkOut: isCheckedIn ? null : (formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || record.checkOut || null),
-            workingHours: `${totalHours.toFixed(1)} hrs`,
-            totalHours,
-            overtimeHours: record.overtimeHours || 0,
-            status: record.status,
-            sessions: formattedSessions,
+            isCheckedIn: false,
+            checkIn: null,
+            checkOut: null,
+            workingHours: '0.0 hrs',
+            totalHours: 0,
+            status: 'absent',
+            sessions: [] as any[],
         };
     }
 
-    async checkIn(userIdOrDto: string | CheckInDTO) {
-        const dateStr = this.getTodayDateString();
-        const now = new Date();
-        const timeStr = this.formatTimeString(now);
-        const isLate = await this.computeIsLate(now);
+    const formattedSessions = formatSessions(record.sessions || []);
+    const openSession = formattedSessions.find((s) => !s.checkOutTime);
+    const isCheckedIn = Boolean(openSession);
+    const totalHours = calculateTotalHours(record.sessions || []);
 
-        if (typeof userIdOrDto !== 'string') {
-            const dto = userIdOrDto;
-            const employeeId = dto.employeeId;
-            const checkInTime = dto.checkInTime ? new Date(dto.checkInTime) : now;
-            const time = dto.checkIn ? dto.checkIn : this.formatTimeString(checkInTime);
+    return {
+        isCheckedIn,
+        checkIn: formattedSessions[0]?.checkIn || record.checkIn || null,
+        checkOut: isCheckedIn ? null : (formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || record.checkOut || null),
+        workingHours: `${totalHours.toFixed(1)} hrs`,
+        totalHours,
+        overtimeHours: record.overtimeHours || 0,
+        status: record.status,
+        sessions: formattedSessions,
+    };
+}
 
-            let record = await AttendanceRecord.findOne({ employeeId, date: dateStr });
-            if (!record) {
-                record = new AttendanceRecord({
-                    employeeId,
-                    date: dateStr,
-                    sessions: [{ checkInTime, checkOutTime: null, checkIn: time, checkOut: null }],
-                    checkIn: time,
-                    checkInTime,
-                    checkOut: null,
-                    checkOutTime: null,
-                    totalHours: 0,
-                    overtimeHours: 0,
-                    status: dto.status || (isLate ? 'late' : 'present'),
-                    shift: 'Shift A',
-                    isApproved: false,
-                });
-            } else {
-                const openSession = record.sessions.find((s) => !s.checkOutTime);
-                if (openSession) throw AppError.badRequest('Employee already checked in');
+export async function checkIn(userIdOrDto: string | CheckInDTO) {
+    const dateStr = getTodayDateString();
+    const now = new Date();
+    const timeStr = formatTimeString(now);
+    const isLate = await computeIsLate(now);
 
-                const newSession: ISession = { checkInTime, checkOutTime: null, checkIn: time, checkOut: null };
-                record.sessions.push(newSession);
-                record.status = dto.status || (isLate ? 'late' : 'present');
-                record.checkIn = record.sessions[0]?.checkIn ?? time;
-                record.checkInTime = record.sessions[0]?.checkInTime ?? checkInTime;
-                record.checkOut = null;
-                record.checkOutTime = null;
-            }
+    if (typeof userIdOrDto !== 'string') {
+        const dto = userIdOrDto;
+        const employeeId = dto.employeeId;
+        const checkInTime = dto.checkInTime ? new Date(dto.checkInTime) : now;
+        const time = dto.checkIn ? dto.checkIn : formatTimeString(checkInTime);
 
-            await record.save();
-            return record;
-        }
-
-        const userId = userIdOrDto as string;
-        let record = await AttendanceRecord.findOne({ employeeId: userId, date: dateStr });
+        let record = await AttendanceRecord.findOne({ employeeId, date: dateStr });
         if (!record) {
             record = new AttendanceRecord({
-                employeeId: userId,
+                employeeId,
                 date: dateStr,
-                sessions: [{ checkInTime: now, checkOutTime: null, checkIn: timeStr, checkOut: null }],
-                checkIn: timeStr,
-                checkInTime: now,
+                sessions: [{ checkInTime, checkOutTime: null, checkIn: time, checkOut: null }],
+                checkIn: time,
+                checkInTime,
                 checkOut: null,
                 checkOutTime: null,
                 totalHours: 0,
                 overtimeHours: 0,
-                status: isLate ? 'late' : 'present',
+                status: dto.status || (isLate ? 'late' : 'present'),
                 shift: 'Shift A',
                 isApproved: false,
             });
         } else {
             const openSession = record.sessions.find((s) => !s.checkOutTime);
-            if (openSession) throw AppError.badRequest('You are already checked in');
+            if (openSession) throw AppError.badRequest('Employee already checked in');
 
-            const newSession: ISession = { checkInTime: now, checkOutTime: null, checkIn: timeStr, checkOut: null };
+            const newSession: ISession = { checkInTime, checkOutTime: null, checkIn: time, checkOut: null };
             record.sessions.push(newSession);
-            record.status = isLate ? 'late' : 'present';
-            record.checkIn = record.sessions[0]?.checkIn ?? timeStr;
-            record.checkInTime = record.sessions[0]?.checkInTime ?? now;
+            record.status = dto.status || (isLate ? 'late' : 'present');
+            record.checkIn = record.sessions[0]?.checkIn ?? time;
+            record.checkInTime = record.sessions[0]?.checkInTime ?? checkInTime;
             record.checkOut = null;
             record.checkOutTime = null;
         }
@@ -203,68 +594,67 @@ export class AttendanceService {
         return record;
     }
 
-    async checkOut(userIdOrDto: string | CheckOutDTO) {
-        const dateStr = this.getTodayDateString();
-        const now = new Date();
-        const timeStr = this.formatTimeString(now);
+    const userId = userIdOrDto as string;
+    let record = await AttendanceRecord.findOne({ employeeId: userId, date: dateStr });
+    if (!record) {
+        record = new AttendanceRecord({
+            employeeId: userId,
+            date: dateStr,
+            sessions: [{ checkInTime: now, checkOutTime: null, checkIn: timeStr, checkOut: null }],
+            checkIn: timeStr,
+            checkInTime: now,
+            checkOut: null,
+            checkOutTime: null,
+            totalHours: 0,
+            overtimeHours: 0,
+            status: isLate ? 'late' : 'present',
+            shift: 'Shift A',
+            isApproved: false,
+        });
+    } else {
+        const openSession = record.sessions.find((s) => !s.checkOutTime);
+        if (openSession) throw AppError.badRequest('You are already checked in');
 
-        if (typeof userIdOrDto !== 'string') {
-            const dto = userIdOrDto;
-            const attendanceId = dto.attendanceId;
-            const employeeId = dto.employeeId;
-            const checkOutTime = dto.checkOutTime ? new Date(dto.checkOutTime) : now;
-            const time = dto.checkOut ? dto.checkOut : this.formatTimeString(checkOutTime);
+        const newSession: ISession = { checkInTime: now, checkOutTime: null, checkIn: timeStr, checkOut: null };
+        record.sessions.push(newSession);
+        record.status = isLate ? 'late' : 'present';
+        record.checkIn = record.sessions[0]?.checkIn ?? timeStr;
+        record.checkInTime = record.sessions[0]?.checkInTime ?? now;
+        record.checkOut = null;
+        record.checkOutTime = null;
+    }
 
-            let record: any = null;
-            if (attendanceId) record = await AttendanceRecord.findById(attendanceId);
-            else if (employeeId) record = await AttendanceRecord.findOne({ employeeId, date: dateStr });
+    await record.save();
+    return record;
+}
 
-            if (!record) throw AppError.badRequest('Active attendance record not found for checkout');
+export async function checkOut(userIdOrDto: string | CheckOutDTO) {
+    const dateStr = getTodayDateString();
+    const now = new Date();
+    const timeStr = formatTimeString(now);
 
-            const openSessionIndex = record.sessions.findIndex((s: any) => !s.checkOutTime);
-            if (openSessionIndex === -1) throw AppError.badRequest('Active attendance record not found for checkout');
+    if (typeof userIdOrDto !== 'string') {
+        const dto = userIdOrDto;
+        const attendanceId = dto.attendanceId;
+        const employeeId = dto.employeeId;
+        const checkOutTime = dto.checkOutTime ? new Date(dto.checkOutTime) : now;
+        const time = dto.checkOut ? dto.checkOut : formatTimeString(checkOutTime);
 
-            record.sessions[openSessionIndex].checkOutTime = checkOutTime;
-            record.sessions[openSessionIndex].checkOut = time;
-            record.checkOut = time;
-            record.checkOutTime = checkOutTime;
+        let record: any = null;
+        if (attendanceId) record = await AttendanceRecord.findById(attendanceId);
+        else if (employeeId) record = await AttendanceRecord.findOne({ employeeId, date: dateStr });
 
-            const totalHours = this.calculateTotalHours(record.sessions);
-            record.totalHours = totalHours;
+        if (!record) throw AppError.badRequest('Active attendance record not found for checkout');
 
-            let halfDayThreshold = 4;
-            let minFullDayHours = 8;
-            try {
-                const settings = await settingsService.getSettings();
-                if (settings) {
-                    halfDayThreshold = settings.halfDayThresholdHours ?? 4;
-                    minFullDayHours = settings.minFullDayHours ?? 8;
-                }
-            } catch (e) {
-                console.error('[AttendanceService] Error loading settings for checkOut thresholds:', e);
-            }
+        const openSessionIndex = record.sessions.findIndex((s: any) => !s.checkOutTime);
+        if (openSessionIndex === -1) throw AppError.badRequest('Active attendance record not found for checkout');
 
-            if (totalHours < halfDayThreshold) record.status = 'half_day';
-            else if (totalHours > minFullDayHours) record.overtimeHours = Math.round((totalHours - minFullDayHours) * 10) / 10;
-            else record.overtimeHours = 0;
+        record.sessions[openSessionIndex].checkOutTime = checkOutTime;
+        record.sessions[openSessionIndex].checkOut = time;
+        record.checkOut = time;
+        record.checkOutTime = checkOutTime;
 
-            await record.save();
-            return record;
-        }
-
-        const userId = userIdOrDto as string;
-        const record = await AttendanceRecord.findOne({ employeeId: userId, date: dateStr });
-        if (!record) throw AppError.badRequest('You are not currently checked in');
-
-        const openSessionIndex = record.sessions.findIndex((s) => !s.checkOutTime);
-        if (openSessionIndex === -1) throw AppError.badRequest('You are not currently checked in');
-
-        record.sessions[openSessionIndex].checkOutTime = now;
-        record.sessions[openSessionIndex].checkOut = timeStr;
-        record.checkOut = timeStr;
-        record.checkOutTime = now;
-
-        const totalHours = this.calculateTotalHours(record.sessions);
+        const totalHours = calculateTotalHours(record.sessions);
         record.totalHours = totalHours;
 
         let halfDayThreshold = 4;
@@ -287,146 +677,191 @@ export class AttendanceService {
         return record;
     }
 
-    async getAttendanceHistory(userId: string) {
-        const records = await AttendanceRecord.find({ employeeId: userId })
-            .sort({ date: -1, createdAt: -1 })
-            .limit(30);
+    const userId = userIdOrDto as string;
+    const record = await AttendanceRecord.findOne({ employeeId: userId, date: dateStr });
+    if (!record) throw AppError.badRequest('You are not currently checked in');
 
-        return records.map((r: any) => {
-            const totalHours = this.calculateTotalHours(r.sessions || []);
-            const formattedSessions = this.formatSessions(r.sessions || []);
+    const openSessionIndex = record.sessions.findIndex((s) => !s.checkOutTime);
+    if (openSessionIndex === -1) throw AppError.badRequest('You are not currently checked in');
 
-            return {
-                id: r._id.toString(),
-                date: r.date,
-                checkIn: formattedSessions[0]?.checkIn || r.checkIn || null,
-                checkOut: formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || r.checkOut || null,
-                hours: `${totalHours.toFixed(1)}h`,
-                totalHours,
-                status: r.status,
-                sessions: formattedSessions,
-            };
-        });
-    }
+    record.sessions[openSessionIndex].checkOutTime = now;
+    record.sessions[openSessionIndex].checkOut = timeStr;
+    record.checkOut = timeStr;
+    record.checkOutTime = now;
 
-    async getEmployeeDashboardSummary(userId?: string): Promise<EmployeeDashboardSummary> {
-        if (!userId) {
-            return {
-                todayStatus: 'not_checked_in',
-                checkInTime: null,
-                checkOutTime: null,
-                monthPresentDays: 0,
-                monthHoursWorked: 0,
-            };
+    const totalHours = calculateTotalHours(record.sessions);
+    record.totalHours = totalHours;
+
+    let halfDayThreshold = 4;
+    let minFullDayHours = 8;
+    try {
+        const settings = await settingsService.getSettings();
+        if (settings) {
+            halfDayThreshold = settings.halfDayThresholdHours ?? 4;
+            minFullDayHours = settings.minFullDayHours ?? 8;
         }
-
-        const todayData: any = await this.getTodayAttendance(userId);
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth() + 1;
-
-        const summary = await this.attendanceRepository.getEmployeeMonthlySummary(userId, year, month);
-
-        return {
-            todayStatus: todayData.status || (todayData.isCheckedIn ? 'present' : 'absent'),
-            checkInTime: todayData.checkIn || null,
-            checkOutTime: todayData.checkOut || null,
-            monthPresentDays: summary.monthPresentDays,
-            monthHoursWorked: summary.monthHoursWorked,
-        };
+    } catch (e) {
+        console.error('[AttendanceService] Error loading settings for checkOut thresholds:', e);
     }
 
-    // ==========================================
-    // Manager Operations
-    // ==========================================
+    if (totalHours < halfDayThreshold) record.status = 'half_day';
+    else if (totalHours > minFullDayHours) record.overtimeHours = Math.round((totalHours - minFullDayHours) * 10) / 10;
+    else record.overtimeHours = 0;
 
-    async getTeamAttendance(managerId: string) {
-        return this.getAllAttendance('manager', managerId);
-    }
-
-    // ==========================================
-    // Admin & Cross-Role Operations
-    // ==========================================
-
-    async getAllAttendance(role: string, userId: string) {
-        let filter: any = {};
-        if (role === 'manager') {
-            const managerObjectId = new mongoose.Types.ObjectId(userId);
-            const teamUsers = await User.find({ role: 'employee', managerId: managerObjectId }).select('_id');
-            const employeeIds = teamUsers.map((u: any) => new mongoose.Types.ObjectId(u._id));
-
-            filter = {
-                $or: [
-                    { employeeId: { $in: employeeIds } },
-                    { managerId: managerObjectId },
-                ],
-            };
-        }
-
-        const records = await AttendanceRecord.find(filter)
-            .populate('employeeId', 'fullName name email department designation role')
-            .sort({ date: -1, createdAt: -1 });
-
-        return records.map((r: any) => {
-            const totalHours = this.calculateTotalHours(r.sessions || []);
-            const formattedSessions = this.formatSessions(r.sessions || []);
-
-            return {
-                id: r._id.toString(),
-                employeeName: (r.employeeId as any)?.fullName || (r.employeeId as any)?.name || 'Employee',
-                employeeEmail: (r.employeeId as any)?.email || '',
-                department: (r.employeeId as any)?.department || 'Production',
-                date: r.date,
-                checkIn: formattedSessions[0]?.checkIn || r.checkIn || null,
-                checkOut: formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || r.checkOut || null,
-                hours: `${totalHours.toFixed(1)}h`,
-                status: r.status,
-                sessions: formattedSessions,
-            };
-        });
-    }
-
-    async getAttendanceSummary() {
-        const todayStr = this.getTodayDateString();
-        const totalEmployees = await User.countDocuments({ status: 'active' });
-
-        const stats = {
-            present: await AttendanceRecord.countDocuments({ date: todayStr, status: 'present' }),
-            late: await AttendanceRecord.countDocuments({ date: todayStr, status: 'late' }),
-            halfDay: await AttendanceRecord.countDocuments({ date: todayStr, status: 'half_day' }),
-        };
-
-        const presentRate = totalEmployees > 0 ? Math.round(((stats.present + stats.late + stats.halfDay) / totalEmployees) * 100) : 0;
-
-        return {
-            totalEmployees,
-            todayPresent: stats.present,
-            todayAbsent: Math.max(0, totalEmployees - (stats.present + stats.late + stats.halfDay)),
-            todayLate: stats.late,
-            todayHalfDay: stats.halfDay,
-            attendancePercentage: presentRate,
-        };
-    }
-
-    async getEmployeeAttendance(employeeId: string, query: any) {
-        const { page, limit, skip } = getPaginationOptions(query);
-        const [records, total] = await Promise.all([
-            AttendanceRecord.find({ employeeId }).sort({ date: -1 }).skip(skip).limit(limit),
-            AttendanceRecord.countDocuments({ employeeId }),
-        ]);
-        const meta = buildPaginationMeta(total, page, limit);
-
-        return { records, total, pagination: meta };
-    }
-
-    async getMonthlyAttendance(year?: number, month?: number) {
-        const now = new Date();
-        const targetYear = year || now.getFullYear();
-        const targetMonth = month || now.getMonth() + 1;
-        const prefix = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
-        const records = await AttendanceRecord.find({ date: new RegExp(`^${prefix}`) });
-        return { year: targetYear, month: targetMonth, totalRecords: records.length, records };
-    }
+    await record.save();
+    return record;
 }
 
-export default AttendanceService;
+export async function getAttendanceHistory(userId: string) {
+    const records = await AttendanceRecord.find({ employeeId: userId })
+        .sort({ date: -1, createdAt: -1 })
+        .limit(30);
+
+    return records.map((r: any) => {
+        const totalHours = calculateTotalHours(r.sessions || []);
+        const formattedSessions = formatSessions(r.sessions || []);
+
+        return {
+            id: r._id.toString(),
+            date: r.date,
+            checkIn: formattedSessions[0]?.checkIn || r.checkIn || null,
+            checkOut: formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || r.checkOut || null,
+            hours: `${totalHours.toFixed(1)}h`,
+            totalHours,
+            status: r.status,
+            sessions: formattedSessions,
+        };
+    });
+}
+
+export async function getEmployeeDashboardSummary(userId?: string): Promise<EmployeeDashboardSummary> {
+    if (!userId) {
+        return {
+            todayStatus: 'not_checked_in',
+            checkInTime: null,
+            checkOutTime: null,
+            monthPresentDays: 0,
+            monthHoursWorked: 0,
+        };
+    }
+
+    const todayData: any = await getTodayAttendance(userId);
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+
+    const summary = await repoGetEmployeeMonthlySummary(userId, year, month);
+
+    return {
+        todayStatus: todayData.status || (todayData.isCheckedIn ? 'present' : 'absent'),
+        checkInTime: todayData.checkIn || null,
+        checkOutTime: todayData.checkOut || null,
+        monthPresentDays: summary.monthPresentDays,
+        monthHoursWorked: summary.monthHoursWorked,
+    };
+}
+
+// ==========================================
+// Manager Operations
+// ==========================================
+
+export async function getTeamAttendance(managerId: string) {
+    return getAllAttendance('manager', managerId);
+}
+
+// ==========================================
+// Admin & Cross-Role Operations
+// ==========================================
+
+export async function getAllAttendance(role: string, userId: string) {
+    let filter: any = {};
+    if (role === 'manager') {
+        const managerObjectId = new mongoose.Types.ObjectId(userId);
+        const teamUsers = await User.find({ role: 'employee', managerId: managerObjectId }).select('_id');
+        const employeeIds = teamUsers.map((u: any) => new mongoose.Types.ObjectId(u._id));
+
+        filter = {
+            $or: [
+                { employeeId: { $in: employeeIds } },
+                { managerId: managerObjectId },
+            ],
+        };
+    }
+
+    const records = await AttendanceRecord.find(filter)
+        .populate('employeeId', 'fullName name email department designation role')
+        .sort({ date: -1, createdAt: -1 });
+
+    return records.map((r: any) => {
+        const totalHours = calculateTotalHours(r.sessions || []);
+        const formattedSessions = formatSessions(r.sessions || []);
+
+        return {
+            id: r._id.toString(),
+            employeeName: (r.employeeId as any)?.fullName || (r.employeeId as any)?.name || 'Employee',
+            employeeEmail: (r.employeeId as any)?.email || '',
+            department: (r.employeeId as any)?.department || 'Production',
+            date: r.date,
+            checkIn: formattedSessions[0]?.checkIn || r.checkIn || null,
+            checkOut: formattedSessions.filter((s) => s.checkOutTime).slice(-1)[0]?.checkOut || r.checkOut || null,
+            hours: `${totalHours.toFixed(1)}h`,
+            status: r.status,
+            sessions: formattedSessions,
+        };
+    });
+}
+
+export async function getAttendanceSummary() {
+    const todayStr = getTodayDateString();
+    const totalEmployees = await User.countDocuments({ status: 'active' });
+
+    const stats = {
+        present: await AttendanceRecord.countDocuments({ date: todayStr, status: 'present' }),
+        late: await AttendanceRecord.countDocuments({ date: todayStr, status: 'late' }),
+        halfDay: await AttendanceRecord.countDocuments({ date: todayStr, status: 'half_day' }),
+    };
+
+    const presentRate = totalEmployees > 0 ? Math.round(((stats.present + stats.late + stats.halfDay) / totalEmployees) * 100) : 0;
+
+    return {
+        totalEmployees,
+        todayPresent: stats.present,
+        todayAbsent: Math.max(0, totalEmployees - (stats.present + stats.late + stats.halfDay)),
+        todayLate: stats.late,
+        todayHalfDay: stats.halfDay,
+        attendancePercentage: presentRate,
+    };
+}
+
+export async function getEmployeeAttendance(employeeId: string, query: any) {
+    const { page, limit, skip } = getPaginationOptions(query);
+    const [records, total] = await Promise.all([
+        AttendanceRecord.find({ employeeId }).sort({ date: -1 }).skip(skip).limit(limit),
+        AttendanceRecord.countDocuments({ employeeId }),
+    ]);
+    const meta = buildPaginationMeta(total, page, limit);
+
+    return { records, total, pagination: meta };
+}
+
+export async function getMonthlyAttendance(year?: number, month?: number) {
+    const now = new Date();
+    const targetYear = year || now.getFullYear();
+    const targetMonth = month || now.getMonth() + 1;
+    const prefix = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+    const records = await AttendanceRecord.find({ date: new RegExp(`^${prefix}`) });
+    return { year: targetYear, month: targetMonth, totalRecords: records.length, records };
+}
+
+export const attendanceService = {
+    getTodayAttendance,
+    checkIn,
+    checkOut,
+    getAttendanceHistory,
+    getEmployeeDashboardSummary,
+    getTeamAttendance,
+    getAllAttendance,
+    getAttendanceSummary,
+    getEmployeeAttendance,
+    getMonthlyAttendance,
+};
