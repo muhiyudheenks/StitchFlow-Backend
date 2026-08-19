@@ -1,9 +1,8 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../../shared/types/roleTypes';
-import { ReportsService } from '../services/reports.service';
 import { asyncHandler } from '../../../shared/errors';
+import { reportsService } from '../services/reports.service';
 
-const reportsService = new ReportsService();
 
 export const getReports = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const data = await reportsService.getReports(req.user?.role);

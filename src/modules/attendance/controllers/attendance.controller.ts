@@ -3,9 +3,7 @@ import { AuthRequest } from '../../../shared/types/roleTypes';
 import { asyncHandler, AppError } from '../../../shared/errors';
 import { sendResponse } from '../../user/utils/admin.utils';
 import { HTTP_STATUS, RESPONSE_MESSAGES } from '../../user/constants/admin.constants';
-import AttendanceService from '../services/attendance.service';
-
-const service = new AttendanceService();
+import { attendanceService as service } from '../services/attendance.service';
 
 export const getTodayAttendance = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const userId = req.user?.id;
