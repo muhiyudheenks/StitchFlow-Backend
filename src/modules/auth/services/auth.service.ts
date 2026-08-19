@@ -227,11 +227,11 @@ export async function setupPassword(data: { token?: string; newPassword?: string
     if (!tokenInput || !newPassword) {
         throw AppError.badRequest('Token and new password are required.');
     }
-    if (confirmPassword && newPassword !== confirmPassword) {
+    if (!confirmPassword || newPassword !== confirmPassword) {
         throw AppError.badRequest('Passwords do not match.');
     }
-    if (newPassword.length < 6) {
-        throw AppError.badRequest('Password must be at least 6 characters.');
+    if (newPassword.length < 8) {
+        throw AppError.badRequest('Password must be at least 8 characters.');
     }
 
     const rawToken = decodeURIComponent(tokenInput.toString().trim());

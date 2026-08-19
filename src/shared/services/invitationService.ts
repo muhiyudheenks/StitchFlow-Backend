@@ -13,7 +13,7 @@ export const resendSetupPasswordToken = async (user: IUser): Promise<{ user: IUs
 
     console.log(`[InvitationService] Setup password token generated for user: ${user.email}`);
 
-    const clientUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:3000';
+    const clientUrl = process.env.CLIENT_URL || process.env.FRONTEND_URL;
     const setupUrl = `${clientUrl}/set-password/${rawToken}`;
 
     try {
