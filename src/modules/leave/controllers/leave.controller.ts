@@ -1,9 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../../shared/types/roleTypes';
-import { LeaveService } from '../services/leave.service';
+import * as leaveService from '../services/leave.service';
 import { asyncHandler, AppError } from '../../../shared/errors';
-
-const leaveService = new LeaveService();
 
 export const getMyLeaves = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const userId = req.user?.id;

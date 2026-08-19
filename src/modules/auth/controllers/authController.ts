@@ -1,329 +1,83 @@
-import { Request, Response, NextFunction } from 'express';
-import crypto from 'crypto';
-import User from '../models/userModel';
-import Otp from '../models/otpModel';
-import generateOtp from '../../../shared/utils/generateOtp';
-import sendOtp from '../../../shared/utils/sendOtp';
-import generateToken from '../../../shared/utils/generateToken';
+import { Request, Response } from 'express';
+import { authService } from '../services/auth.service';
 import type {
     LoginRequestBody,
     VerifyOtpRequestBody,
     ResendOtpRequestBody,
-    OtpPurpose,
 } from '../types/authTypes';
-import { loginValidator, resendOtpValidator, verifyOtpValidator } from '../validators/auth-validation';
-import { asyncHandler, AppError } from '../../../shared/errors';
-import { OAuth2Client } from 'google-auth-library';
+import { asyncHandler } from '../../../shared/errors';
 
-const OTP_EXPIRES_MINUTES = Number(process.env.OTP_EXPIRES_MINUTES) || 5;
-
-const createAndSendOtp = async (email: string, purpose: OtpPurpose) => {
-    await Otp.deleteMany({ email, purpose });
-    const code = generateOtp();
-    await Otp.create({
-        email,
-        code,
-        purpose,
-        expiresAt: new Date(Date.now() + OTP_EXPIRES_MINUTES * 60 * 1000),
-    });
-
-    const resendResponse = await sendOtp(email, code);
-    return resendResponse;
+const COOKIE_OPTIONS = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
 };
 
 // @route POST /api/auth/login
-export const login = asyncHandler(async (req: Request<unknown, unknown, LoginRequestBody>, res: Response, next: NextFunction) => {
-    const result = loginValidator.safeParse(req.body);
-    if (!result.success) {
-        throw AppError.badRequest('Email and password are required.');
-    }
-
-    const { email, password } = result.data;
-    const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
-
-    if (!user) {
-        throw AppError.unauthorized('Invalid email or password.');
-    }
-
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-        throw AppError.unauthorized('Invalid email or password.');
-    }
-    const emailResponse = await createAndSendOtp(user.email, 'login');
-
-    return res.status(200).json({
-        message: 'OTP sent to your email for login verification.',
-        requiresOtp: true,
-        email: user.email,
-        emailResponse,
-    });
+export const login = asyncHandler(async (req: Request<unknown, unknown, LoginRequestBody>, res: Response) => {
+    const result = await authService.login(req.body);
+    return res.status(200).json(result);
 });
 
-// google login
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+// @route POST /api/auth/google-login
 export const googleLogin = asyncHandler(async (req: Request, res: Response) => {
     const { credential } = req.body;
+    const result = await authService.googleLogin(credential);
 
-    if (!credential) {
-        throw AppError.badRequest("Google credential is required.");
-    }
+    res.cookie('token', result.token, COOKIE_OPTIONS);
+    res.cookie('jwt', result.token, COOKIE_OPTIONS);
 
-    const ticket = await googleClient.verifyIdToken({
-        idToken: credential,
-        audience: process.env.GOOGLE_CLIENT_ID,
-    });
-
-    const payload = ticket.getPayload();
-
-    if (!payload?.email) {
-        throw AppError.unauthorized("Invalid Google account.");
-    }
-
-    // Database-ൽ email ഉണ്ടോ?
-    const user = await User.findOne({
-        email: payload.email.toLowerCase(),
-    });
-
-    if (!user) {
-        throw AppError.forbidden(
-            "Your Google account is not authorized. Please contact the administrator."
-        );
-    }
-
-    // Optional security check
-    if (!payload.email_verified) {
-        throw AppError.unauthorized("Google email is not verified.");
-    }
-
-    const token = generateToken(user._id.toString());
-
-    res.cookie("token", token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    res.cookie("jwt", token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    return res.status(200).json({
-        message: "Google login successful.",
-        token,
-        user: user.toPublicJSON(),
-    });
+    return res.status(200).json(result);
 });
 
 // @route POST /api/auth/verify-otp
-export const verifyOtp = asyncHandler(async (req: Request<unknown, unknown, VerifyOtpRequestBody>, res: Response, next: NextFunction) => {
-    const result = verifyOtpValidator.safeParse(req.body);
-    if (!result.success) {
-        throw AppError.badRequest('Email, code, and purpose are required.');
+export const verifyOtp = asyncHandler(async (req: Request<unknown, unknown, VerifyOtpRequestBody>, res: Response) => {
+    const result = await authService.verifyOtp(req.body);
+
+    if ('token' in result && result.token) {
+        res.cookie('token', result.token, COOKIE_OPTIONS);
+        res.cookie('jwt', result.token, COOKIE_OPTIONS);
     }
 
-    const { email, code, purpose } = result.data;
-
-    const otpRecord = await Otp.findOne({
-        email: email.toLowerCase(),
-        code,
-        purpose,
-    });
-
-    if (!otpRecord) {
-        throw AppError.badRequest('Invalid or expired OTP.');
-    }
-
-    if (otpRecord.expiresAt < new Date()) {
-        await Otp.deleteOne({ _id: otpRecord._id });
-        throw AppError.badRequest('OTP has expired. Please request a new one.');
-    }
-
-    await Otp.deleteMany({ email: email.toLowerCase(), purpose });
-
-    if (purpose === 'forgot-password') {
-        return res.status(200).json({
-            message: 'OTP verified successfully.',
-            email: email.toLowerCase(),
-            resetAllowed: true,
-        });
-    }
-
-    const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
-
-    if (!user) {
-        throw AppError.notFound('User not found.');
-    }
-
-    // Only set isVerified: true if user has already set their password.
-    // Employees who haven't completed setup-password should remain unverified.
-    if (user.password) {
-        user.isVerified = true;
-        await user.save();
-    }
-
-    const token = generateToken(user._id.toString());
-
-    res.cookie('token', token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    res.cookie('jwt', token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    return res.status(200).json({
-        message: 'OTP verified successfully.',
-        token,
-        user: user.toPublicJSON(),
-    });
+    return res.status(200).json(result);
 });
 
 // @route POST /api/auth/resend-otp
-export const resendOtp = asyncHandler(async (req: Request<unknown, unknown, ResendOtpRequestBody>, res: Response, next: NextFunction) => {
-    const result = resendOtpValidator.safeParse(req.body);
-    if (!result.success) {
-        throw AppError.badRequest('Email and purpose are required.');
-    }
-
-    const { email, purpose } = result.data;
-
-    const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) {
-        throw AppError.notFound('User not found.');
-    }
-
-    const emailResponse = await createAndSendOtp(user.email, purpose);
-
-    return res.status(200).json({
-        message: 'A new OTP has been sent to your email.',
-        email: user.email,
-        emailResponse,
-    });
+export const resendOtp = asyncHandler(async (req: Request<unknown, unknown, ResendOtpRequestBody>, res: Response) => {
+    const result = await authService.resendOtp(req.body);
+    return res.status(200).json(result);
 });
 
-export const resetPassword = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    const { email, newpassword } = req.body;
-    if (!email || !newpassword) {
-        throw AppError.badRequest('Email and new password are required.');
-    }
-    const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
-    if (!user) {
-        throw AppError.notFound('Email address not found.');
-    }
-    user.password = newpassword;
-    await user.save();
-    await Otp.deleteMany({ email: user.email, purpose: 'forgot-password' });
-
-    return res.status(200).json({
-        message: 'Password reset successfully.',
-    });
+// @route POST /api/auth/forgot-password
+export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
+    const result = await authService.forgotPassword(req.body.email);
+    return res.status(200).json(result);
 });
 
-export const forgotPassword = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    const { email } = req.body;
-    if (!email) {
-        throw AppError.badRequest('Email is required.');
-    }
-
-    const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) {
-        throw AppError.notFound('Email address not found.');
-    }
-
-    const emailResponse = await createAndSendOtp(user.email, 'forgot-password');
-
-    return res.status(200).json({
-        message: 'OTP sent to your email for password reset.',
-        email: user.email,
-        requiresOtp: true,
-        emailResponse,
-    });
+// @route POST /api/auth/reset-password
+export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
+    const result = await authService.resetPassword(req.body);
+    return res.status(200).json(result);
 });
 
-export const verifySetupToken = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+// @route GET /api/auth/verify-setup-token/:token
+export const verifySetupToken = asyncHandler(async (req: Request, res: Response) => {
     const tokenInput = req.params.token || (req.query.token as string);
-    if (!tokenInput) {
-        throw AppError.badRequest('Token is required.');
-    }
-
-    const rawToken = decodeURIComponent(tokenInput.toString().trim());
-    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
-
-    const user = await User.findOne({
-        setupPasswordToken: hashedToken,
-        setupPasswordExpire: { $gt: new Date() },
-    }).select('+setupPasswordToken +setupPasswordExpire');
-
-    if (!user) {
-        throw AppError.badRequest('Invalid or expired password setup link. Please contact your administrator.');
-    }
-
-    return res.status(200).json({
-        valid: true,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-    });
+    const result = await authService.verifySetupToken(tokenInput);
+    return res.status(200).json(result);
 });
 
-export const setupPassword = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    const { token: tokenInput, newPassword, confirmPassword } = req.body;
-    if (!tokenInput || !newPassword) {
-        throw AppError.badRequest('Token and new password are required.');
-    }
-    if (confirmPassword && newPassword !== confirmPassword) {
-        throw AppError.badRequest('Passwords do not match.');
-    }
-    if (newPassword.length < 6) {
-        throw AppError.badRequest('Password must be at least 6 characters.');
-    }
-
-    const rawToken = decodeURIComponent(tokenInput.toString().trim());
-    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
-
-    const user = await User.findOne({
-        setupPasswordToken: hashedToken,
-        setupPasswordExpire: { $gt: new Date() },
-    }).select('+setupPasswordToken +setupPasswordExpire');
-
-    if (!user) {
-        throw AppError.badRequest('Invalid or expired password setup link.');
-    }
-
-    user.password = newPassword;
-    user.isVerified = true;
-    user.setupPasswordToken = null;
-    user.setupPasswordExpire = null;
-
-    await user.save();
-
-    return res.status(200).json({
-        message: 'Password set successfully! Your account is now activated. You can sign in.',
-    });
+// @route POST /api/auth/setup-password
+export const setupPassword = asyncHandler(async (req: Request, res: Response) => {
+    const result = await authService.setupPassword(req.body);
+    return res.status(200).json(result);
 });
 
 // @route POST /api/auth/logout
-export const logout = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-    res.cookie('token', '', {
-        httpOnly: true,
-        expires: new Date(0),
-        sameSite: 'lax',
-    });
-    res.cookie('jwt', '', {
-        httpOnly: true,
-        expires: new Date(0),
-        sameSite: 'lax',
-    });
+export const logout = asyncHandler(async (req: Request, res: Response) => {
+    res.cookie('token', '', { httpOnly: true, expires: new Date(0), sameSite: 'lax' });
+    res.cookie('jwt', '', { httpOnly: true, expires: new Date(0), sameSite: 'lax' });
     return res.status(200).json({
         success: true,
         message: 'Logged out successfully.',

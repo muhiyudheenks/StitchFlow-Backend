@@ -1,3 +1,6 @@
 export { default as inventoryRouter } from './routes/inventory.routes';
-export * from './services/inventory.service';
-export * from './controllers/inventory.controller';
+export { inventoryService } from './services/inventory.service';
+export { adminInventoryService } from './services/adminInventory.service';
+export { inventoryRepository } from './repositories/inventory.repository';
+export * as inventoryController from './controllers/inventory.controller';
+export * as adminInventoryController from './controllers/adminInventory.controller';

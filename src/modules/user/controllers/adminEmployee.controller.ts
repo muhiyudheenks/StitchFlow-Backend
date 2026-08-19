@@ -1,14 +1,12 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../../shared/types/roleTypes';
-import { AdminEmployeeService } from '../services/adminEmployee.service';
+import * as adminEmployeeService from '../services/adminEmployee.service';
 import { sendResponse } from '../utils/admin.utils';
 import { HTTP_STATUS } from '../constants/admin.constants';
 import { asyncHandler } from '../../../shared/errors';
 
-const service = new AdminEmployeeService();
-
 export const getEmployees = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response> => {
-    const result = await service.getEmployees(req.query as any);
+    const result = await adminEmployeeService.getEmployees(req.query as any);
     return res.status(HTTP_STATUS.OK).json({
         success: true,
         message: 'Employees retrieved successfully',
@@ -24,13 +22,13 @@ export const getEmployees = asyncHandler(async (req: AuthRequest, res: Response,
 });
 
 export const getEmployeeById = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response> => {
-    const employee = await service.getEmployeeById(req.params.id);
+    const employee = await adminEmployeeService.getEmployeeById(req.params.id);
     return sendResponse(res, HTTP_STATUS.OK, true, 'Employee details retrieved successfully', employee);
 });
 
 export const createEmployee = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response> => {
     const adminEmail = req.user?.email || 'Admin';
-    const { employee, emailSent, emailError } = await service.createEmployee(req.body, adminEmail);
+    const { employee, emailSent, emailError } = await adminEmployeeService.createEmployee(req.body, adminEmail);
     const message = emailSent
         ? 'Employee created successfully. Setup invitation link sent.'
         : 'Employee created successfully, but invitation link email could not be sent.';
@@ -47,18 +45,18 @@ export const createEmployee = asyncHandler(async (req: AuthRequest, res: Respons
 
 export const updateEmployee = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response> => {
     const adminEmail = req.user?.email || 'Admin';
-    const employee = await service.updateEmployee(req.params.id, req.body, adminEmail);
+    const employee = await adminEmployeeService.updateEmployee(req.params.id, req.body, adminEmail);
     return sendResponse(res, HTTP_STATUS.OK, true, 'Employee details updated successfully', employee);
 });
 
 export const deleteEmployee = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response> => {
     const adminEmail = req.user?.email || 'Admin';
-    await service.deleteEmployee(req.params.id, adminEmail);
+    await adminEmployeeService.deleteEmployee(req.params.id, adminEmail);
     return sendResponse(res, HTTP_STATUS.OK, true, 'Employee deleted successfully');
 });
 
 export const resendSetupLink = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response> => {
-    const result = await service.resendSetupLink(req.params.id);
+    const result = await adminEmployeeService.resendSetupLink(req.params.id);
     if (!result.emailSent) {
         return res.status(HTTP_STATUS.OK).json({
             success: false,

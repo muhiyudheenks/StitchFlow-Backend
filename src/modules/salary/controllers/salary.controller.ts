@@ -1,9 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../../shared/types/roleTypes';
-import { SalaryService } from '../services/salary.service';
+import * as salaryService from '../services/salary.service';
 import { asyncHandler } from '../../../shared/errors';
-
-const salaryService = new SalaryService();
 
 export const getSalaryOverview = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const userId = req.user?.id || '';

@@ -1,8 +1,7 @@
 import { Router } from 'express';
-import { InventoryController } from '../controllers/inventory.controller';
+import * as controller from '../controllers/inventory.controller';
 
 const router = Router();
-const controller = new InventoryController();
 
 // Fabric Routes
 router.get('/fabric', controller.getFabrics);

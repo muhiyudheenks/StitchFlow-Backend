@@ -1,11 +1,8 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../../shared/types/roleTypes';
-import { EmployeeService } from '../services/employee.service';
-import { PerformanceService } from '../services/performance.service';
+import * as employeeService from '../services/employee.service';
+import * as performanceService from '../services/performance.service';
 import { asyncHandler } from '../../../shared/errors';
-
-const employeeService = new EmployeeService();
-const performanceService = new PerformanceService();
 
 export const getDashboardData = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const data = await employeeService.getDashboardData(req.user?.id);

@@ -1,141 +1,142 @@
 import LeaveRequest from '../models/leaveRequestModel';
-import { NotificationsService } from '../../notifications/services/notifications.service';
+import * as notifService from '../../notifications/services/notifications.service';
 
-export class LeaveService {
-    async getMyLeaves(userId: string) {
-        const requests = await LeaveRequest.find({ employeeId: userId }).sort({ createdAt: -1 });
+export async function getMyLeaves(userId: string) {
+    const requests = await LeaveRequest.find({ employeeId: userId }).sort({ createdAt: -1 });
 
-        // Calculate dynamic leave balances from database
-        const currentYear = new Date().getFullYear();
-        const approvedInYear = requests.filter((r) => {
-            if (r.status !== 'approved') return false;
-            const year = new Date(r.startDate).getFullYear();
-            return year === currentYear;
-        });
+    const currentYear = new Date().getFullYear();
+    const approvedInYear = requests.filter((r) => {
+        if (r.status !== 'approved') return false;
+        const year = new Date(r.startDate).getFullYear();
+        return year === currentYear;
+    });
 
-        let casualUsed = 0;
-        let sickUsed = 0;
-        let annualUsed = 0;
+    let casualUsed = 0;
+    let sickUsed = 0;
+    let annualUsed = 0;
 
-        approvedInYear.forEach((r) => {
-            const start = new Date(r.startDate).getTime();
-            const end = new Date(r.endDate).getTime();
-            const days = Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1);
+    approvedInYear.forEach((r) => {
+        const start = new Date(r.startDate).getTime();
+        const end = new Date(r.endDate).getTime();
+        const days = Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1);
 
-            const type = (r.leaveType || '').toLowerCase();
-            if (type.includes('casual')) {
-                casualUsed += days;
-            } else if (type.includes('sick')) {
-                sickUsed += days;
-            } else if (type.includes('annual')) {
-                annualUsed += days;
-            }
-        });
+        const type = (r.leaveType || '').toLowerCase();
+        if (type.includes('casual')) {
+            casualUsed += days;
+        } else if (type.includes('sick')) {
+            sickUsed += days;
+        } else if (type.includes('annual')) {
+            annualUsed += days;
+        }
+    });
 
-        // Allocations per year
-        const balances = {
-            casual: Math.max(0, 12 - casualUsed),
-            sick: Math.max(0, 10 - sickUsed),
-            annual: Math.max(0, 15 - annualUsed),
-        };
+    const balances = {
+        casual: Math.max(0, 12 - casualUsed),
+        sick: Math.max(0, 10 - sickUsed),
+        annual: Math.max(0, 15 - annualUsed),
+    };
 
-        const formattedRequests = requests.map((r) => {
-            const typeStr = (r.leaveType || 'casual').toLowerCase();
-            const label = typeStr.includes('sick')
-                ? 'Sick Leave'
-                : typeStr.includes('annual')
-                    ? 'Annual Leave'
-                    : 'Casual Leave';
-
-            return {
-                id: r._id.toString(),
-                leaveType: label,
-                startDate: new Date(r.startDate).toISOString().split('T')[0],
-                endDate: new Date(r.endDate).toISOString().split('T')[0],
-                reason: r.reason || '',
-                status: r.status,
-            };
-        });
+    const formattedRequests = requests.map((r) => {
+        const typeStr = (r.leaveType || 'casual').toLowerCase();
+        const label = typeStr.includes('sick')
+            ? 'Sick Leave'
+            : typeStr.includes('annual')
+                ? 'Annual Leave'
+                : 'Casual Leave';
 
         return {
-            balances,
-            requests: formattedRequests,
-        };
-    }
-
-    async getLeaveRequests(employeeIds?: string[]) {
-        const query = employeeIds && employeeIds.length > 0 ? { employeeId: { $in: employeeIds } } : {};
-
-        const requests = await LeaveRequest.find(query)
-            .populate('employeeId', 'fullName email department')
-            .sort({ createdAt: -1 });
-
-        return requests.map((r) => ({
             id: r._id.toString(),
-            employeeName: (r.employeeId as any)?.fullName || 'Employee',
-            employeeEmail: (r.employeeId as any)?.email || '',
-            department: (r.employeeId as any)?.department || 'Production',
-            leaveType: r.leaveType,
+            leaveType: label,
             startDate: new Date(r.startDate).toISOString().split('T')[0],
             endDate: new Date(r.endDate).toISOString().split('T')[0],
             reason: r.reason || '',
             status: r.status,
-        }));
-    }
+        };
+    });
 
-    async applyLeave(userId: string, data: any) {
-        const start = new Date(data.startDate);
-        const end = new Date(data.endDate);
-
-        if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-            throw new Error('Invalid start or end date');
-        }
-
-        if (end < start) {
-            throw new Error('End date cannot be earlier than start date');
-        }
-
-        const leave = await LeaveRequest.create({
-            employeeId: userId,
-            leaveType: data.leaveType || 'casual',
-            startDate: start,
-            endDate: end,
-            reason: data.reason || '',
-            status: 'pending',
-        });
-
-        return leave;
-    }
-
-    async updateLeaveStatus(requestId: string, status: 'approved' | 'rejected', reviewerId: string) {
-        const updated = await LeaveRequest.findByIdAndUpdate(
-            requestId,
-            { status, reviewedBy: reviewerId },
-            { new: true }
-        );
-
-        if (!updated) {
-            throw new Error('Leave request not found');
-        }
-
-        // Trigger Notification
-        try {
-            const notifService = new NotificationsService();
-            const isApproved = status === 'approved';
-            await notifService.createNotification({
-                recipient: updated.employeeId.toString(),
-                sender: reviewerId || 'Manager',
-                title: isApproved ? 'Leave Request Approved' : 'Leave Request Rejected',
-                message: isApproved
-                    ? `Your ${updated.leaveType} leave request from ${new Date(updated.startDate).toISOString().split('T')[0]} to ${new Date(updated.endDate).toISOString().split('T')[0]} was approved.`
-                    : `Your ${updated.leaveType} leave request was rejected by your manager.`,
-                type: 'LEAVE',
-                priority: isApproved ? 'Medium' : 'High',
-            });
-        } catch (err) {
-            console.error('[LeaveService] Notification Error:', err);
-        }
-
-        return updated;
-    }
+    return {
+        balances,
+        requests: formattedRequests,
+    };
 }
+
+export async function getLeaveRequests(employeeIds?: string[]) {
+    const query = employeeIds && employeeIds.length > 0 ? { employeeId: { $in: employeeIds } } : {};
+
+    const requests = await LeaveRequest.find(query)
+        .populate('employeeId', 'fullName email department')
+        .sort({ createdAt: -1 });
+
+    return requests.map((r) => ({
+        id: r._id.toString(),
+        employeeName: (r.employeeId as any)?.fullName || 'Employee',
+        employeeEmail: (r.employeeId as any)?.email || '',
+        department: (r.employeeId as any)?.department || 'Production',
+        leaveType: r.leaveType,
+        startDate: new Date(r.startDate).toISOString().split('T')[0],
+        endDate: new Date(r.endDate).toISOString().split('T')[0],
+        reason: r.reason || '',
+        status: r.status,
+    }));
+}
+
+export async function applyLeave(userId: string, data: any) {
+    const start = new Date(data.startDate);
+    const end = new Date(data.endDate);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        throw new Error('Invalid start or end date');
+    }
+
+    if (end < start) {
+        throw new Error('End date cannot be earlier than start date');
+    }
+
+    const leave = await LeaveRequest.create({
+        employeeId: userId,
+        leaveType: data.leaveType || 'casual',
+        startDate: start,
+        endDate: end,
+        reason: data.reason || '',
+        status: 'pending',
+    });
+
+    return leave;
+}
+
+export async function updateLeaveStatus(requestId: string, status: 'approved' | 'rejected', reviewerId: string) {
+    const updated = await LeaveRequest.findByIdAndUpdate(
+        requestId,
+        { status, reviewedBy: reviewerId },
+        { new: true }
+    );
+
+    if (!updated) {
+        throw new Error('Leave request not found');
+    }
+
+    try {
+        const isApproved = status === 'approved';
+        await notifService.createNotification({
+            recipient: updated.employeeId.toString(),
+            sender: reviewerId || 'Manager',
+            title: isApproved ? 'Leave Request Approved' : 'Leave Request Rejected',
+            message: isApproved
+                ? `Your ${updated.leaveType} leave request from ${new Date(updated.startDate).toISOString().split('T')[0]} to ${new Date(updated.endDate).toISOString().split('T')[0]} was approved.`
+                : `Your ${updated.leaveType} leave request was rejected by your manager.`,
+            type: 'LEAVE',
+            priority: isApproved ? 'Medium' : 'High',
+        });
+    } catch (err) {
+        console.error('[LeaveService] Notification Error:', err);
+    }
+
+    return updated;
+}
+
+export const leaveService = {
+    getMyLeaves,
+    getLeaveRequests,
+    applyLeave,
+    updateLeaveStatus,
+};

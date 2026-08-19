@@ -1,9 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../../shared/types/roleTypes';
-import { GarmentProductService } from '../services/garmentProduct.service';
+import * as service from '../services/garmentProduct.service';
 import { asyncHandler } from '../../../shared/errors';
-
-const service = new GarmentProductService();
 
 export const createGarmentProduct = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const creator = req.user?.id || '';

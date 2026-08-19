@@ -1,9 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../../shared/types/roleTypes';
-import { ManagerService } from '../services/manager.service';
+import * as managerService from '../services/manager.service';
 import { asyncHandler } from '../../../shared/errors';
-
-const managerService = new ManagerService();
 
 export const getDashboardOverview = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const data = await managerService.getDashboardOverview(req.user?.id);
@@ -106,4 +104,3 @@ export const verifyBatchTask = asyncHandler(async (req: AuthRequest, res: Respon
     const data = await managerService.verifyBatchTask(req.params.batchId, req.params.taskId, req.user?.id || '', status);
     return res.status(200).json({ success: true, message: 'Task verified successfully', data });
 });
-

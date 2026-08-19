@@ -1,9 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../../shared/types/roleTypes';
-import { TaskService } from '../services/tasks.service';
+import * as taskService from '../services/tasks.service';
 import { asyncHandler, AppError } from '../../../shared/errors';
-
-const taskService = new TaskService();
 
 export const getAllTasks = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const filter: any = {};
@@ -40,8 +38,6 @@ export const updateTask = asyncHandler(async (req: AuthRequest, res: Response, n
 
 export const updateTaskProgress = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const { completedQuantity } = req.body;
-    // Note: 'status' from client body is intentionally ignored here.
-    // The service derives status purely from quantity comparison.
     const task = await taskService.updateTaskProgress(req.params.id, completedQuantity);
     return res.status(200).json({ success: true, message: 'Task progress updated', data: task });
 });

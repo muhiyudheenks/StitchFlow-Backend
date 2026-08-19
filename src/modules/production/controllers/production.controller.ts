@@ -1,13 +1,10 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../../shared/types/roleTypes';
-import { ProductionService } from '../services/production.service';
-import { TaskService } from '../../tasks/services/tasks.service';
+import * as service from '../services/production.service';
+import * as taskService from '../../tasks/services/tasks.service';
 import { asyncHandler, AppError } from '../../../shared/errors';
 import { sendResponse } from '../../user/utils/admin.utils';
 import { HTTP_STATUS, RESPONSE_MESSAGES } from '../../user/constants/admin.constants';
-
-const service = new ProductionService();
-const taskService = new TaskService();
 
 export const getProductionBatches = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const role = req.user?.role;

@@ -1,10 +1,9 @@
 import { Router } from 'express';
-import { InventoryController } from '../controllers/adminInventory.controller';
+import * as controller from '../controllers/adminInventory.controller';
 import { validateRequest } from '../../user/middleware/validateRequest.middleware';
 import { createInventorySchema, updateInventorySchema, stockAdjustSchema } from '../../user/validators/admin.validators';
 
 const router = Router();
-const controller = new InventoryController();
 
 router.post('/', validateRequest(createInventorySchema), controller.createItem);
 router.get('/', controller.getItems);

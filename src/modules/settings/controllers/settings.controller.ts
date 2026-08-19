@@ -1,6 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../../shared/types/roleTypes';
-import { settingsService } from '../services/settings.service';
+import * as settingsService from '../services/settings.service';
 import { asyncHandler } from '../../../shared/errors';
 
 export const getSettings = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {

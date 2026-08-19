@@ -1,9 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../../../shared/types/roleTypes';
-import { NotificationsService } from '../services/notifications.service';
+import * as service from '../services/notifications.service';
 import { asyncHandler, AppError } from '../../../shared/errors';
-
-const service = new NotificationsService();
 
 export const getNotifications = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction) => {
     const userId = req.user?.id || (req.user as any)?._id;
