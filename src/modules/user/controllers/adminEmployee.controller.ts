@@ -58,6 +58,14 @@ export const deleteEmployee = asyncHandler(async (req: AuthRequest, res: Respons
 });
 
 export const resendSetupLink = asyncHandler(async (req: AuthRequest, res: Response, next: NextFunction): Promise<Response> => {
-    await service.resendSetupLink(req.params.id);
-    return sendResponse(res, HTTP_STATUS.OK, true, 'Setup password link resent successfully');
+    const result = await service.resendSetupLink(req.params.id);
+    if (!result.emailSent) {
+        return res.status(HTTP_STATUS.OK).json({
+            success: false,
+            emailSent: false,
+            message: `Failed to resend setup password link email: ${result.emailError}`,
+            error: result.emailError,
+        });
+    }
+    return sendResponse(res, HTTP_STATUS.OK, true, 'Setup password link resent successfully', result);
 });

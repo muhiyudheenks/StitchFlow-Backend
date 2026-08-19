@@ -137,7 +137,20 @@ export class AdminEmployeeService {
         const employee = await this.repo.findById(id);
         if (!employee) throw AppError.notFound('Employee not found');
 
-        await resendSetupPasswordToken(employee);
-        return true;
+        if (!employee.password) {
+            employee.isVerified = false;
+        }
+
+        let emailSent = true;
+        let emailError: string | undefined = undefined;
+        try {
+            await resendSetupPasswordToken(employee);
+        } catch (emailErr: any) {
+            emailSent = false;
+            emailError = emailErr.message || 'Failed to send invitation email';
+            console.error(`[AdminEmployeeService] Resend setup link error for ${employee.email}:`, emailErr);
+        }
+
+        return { emailSent, emailError };
     }
 }
