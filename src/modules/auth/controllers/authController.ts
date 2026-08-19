@@ -152,14 +152,17 @@ export const verifyOtp = asyncHandler(async (req: Request<unknown, unknown, Veri
         });
     }
 
-    const user = await User.findOneAndUpdate(
-        { email: email.toLowerCase() },
-        { isVerified: true },
-        { new: true }
-    );
+    const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
 
     if (!user) {
         throw AppError.notFound('User not found.');
+    }
+
+    // Only set isVerified: true if user has already set their password.
+    // Employees who haven't completed setup-password should remain unverified.
+    if (user.password) {
+        user.isVerified = true;
+        await user.save();
     }
 
     const token = generateToken(user._id.toString());
