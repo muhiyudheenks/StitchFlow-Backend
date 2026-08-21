@@ -37,7 +37,7 @@ const allowedOrigins = envFrontendUrl
 app.use(
     cors({
         origin: function (origin, callback) {
-            if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes(origin.replace(/\/$/, '')) || process.env.NODE_ENV !== 'production') {
+            if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes(origin.replace(/\/$/, ''))) {
                 callback(null, true);
             } else {
                 callback(new Error('Not allowed by CORS'));

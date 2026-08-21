@@ -10,8 +10,12 @@ export const errorHandler = (
 ): void => {
     let error = err;
 
+    // CORS Error Special Handling
+    if (err.message === 'Not allowed by CORS') {
+        error = AppError.forbidden('CORS policy: Access denied for this origin.');
+    }
     // Zod Validation Error 
-    if (err instanceof ZodError) {
+    else if (err instanceof ZodError) {
         const issues = err.issues.map((issue) => issue.message).join(', ');
         const message = issues || 'Validation failed';
         error = AppError.unprocessable(message);
@@ -25,16 +29,16 @@ export const errorHandler = (
             : `Duplicate value '${value}' for ${field}. Please use another value.`;
         error = AppError.conflict(message);
     }
-    //Mongoose Cast Error 
+    // Mongoose Cast Error 
     else if (err.name === 'CastError') {
         const message = `Invalid ${err.path}: ${err.value}`;
         error = AppError.badRequest(message);
     }
-    //JWT JsonWebTokenError 
+    // JWT JsonWebTokenError 
     else if (err.name === 'JsonWebTokenError') {
         error = AppError.unauthorized('Invalid token. Please log in again.');
     }
-    //JWT TokenExpiredError 
+    // JWT TokenExpiredError 
     else if (err.name === 'TokenExpiredError') {
         error = AppError.unauthorized('Token expired. Please log in again.');
     }
@@ -48,13 +52,14 @@ export const errorHandler = (
     const statusCode = error.statusCode || 500;
     const isDev = process.env.NODE_ENV !== 'production';
 
-    if (isDev) {
+    // Log errors on terminal / PM2 logs (Always log 500 errors even in production)
+    if (isDev || statusCode === 500) {
         console.error('[GlobalErrorHandler]', {
             path: req.originalUrl,
             method: req.method,
             statusCode,
             message: error.message,
-            stack: error.stack,
+            stack: isDev ? error.stack : undefined,
         });
     }
 

@@ -7,8 +7,6 @@ export const sendInvitationEmail = async (
     role: string,
     setupUrl: string
 ): Promise<boolean> => {
-    console.log(`[EmailService] Attempting to send invitation email to: ${email}`);
-    console.log(`[EmailService] Setup URL: ${setupUrl}`);
 
     const roleCapitalized = role.charAt(0).toUpperCase() + role.slice(1);
     const subject = `You've been invited to StitchFlow AI as a ${roleCapitalized}`;

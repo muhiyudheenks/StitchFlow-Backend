@@ -9,6 +9,7 @@ export const resendSetupPasswordToken = async (user: IUser): Promise<{ user: IUs
 
     user.setupPasswordToken = hashedToken;
     user.setupPasswordExpire = setupPasswordExpire;
+    user.isVerified = false;
     await user.save();
 
     console.log(`[InvitationService] Setup password token generated for user: ${user.email}`);
