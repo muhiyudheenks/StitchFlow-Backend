@@ -60,25 +60,33 @@ export async function googleLogin(credential?: string) {
         throw AppError.badRequest('Google credential is required.');
     }
 
-    const ticket = await googleClient.verifyIdToken({
-        idToken: credential,
-        audience: process.env.GOOGLE_CLIENT_ID,
-    });
+    let ticket;
+    try {
+        ticket = await googleClient.verifyIdToken({
+            idToken: credential,
+            audience: process.env.GOOGLE_CLIENT_ID,
+        });
+    } catch {
+        throw AppError.unauthorized('Google authentication failed.');
+    }
 
     const payload = ticket.getPayload();
-    if (!payload?.email) {
+    if (!payload?.email || payload.email_verified !== true) {
         throw AppError.unauthorized('Invalid Google account.');
     }
 
-    const user = await userRepository.findByEmail(payload.email);
+    const email = payload.email.trim().toLowerCase();
+    const user = await userRepository.findByEmail(email);
     if (!user) {
         throw AppError.forbidden(
-            'Your Google account is not authorized. Please contact the administrator.'
+            'This email is not registered in StitchFlow. Please contact the administrator.'
         );
     }
 
-    if (!payload.email_verified) {
-        throw AppError.unauthorized('Google email is not verified.');
+    if (user.status !== 'active' || user.isBlock) {
+        throw AppError.forbidden(
+            'Your StitchFlow account is inactive. Please contact the administrator.'
+        );
     }
 
     const token = generateToken(user._id.toString());
